@@ -1,0 +1,57 @@
+---
+version: "3.8"
+services:
+  consul-server:
+    image: consul-server:testing
+    tty: true
+    privileged: true
+    restart: on-failure
+    init: false
+    # cgroup: private
+    ports:
+      - 8500:8500
+    volumes:
+      - "/sys/fs/cgroup:/sys/fs/cgroup:ro"
+    tmpfs:
+      - /tmp
+      - /run
+    networks:
+      - hind
+  nomad-server:
+    image: nomad-server:testing
+    tty: true
+    privileged: true
+    restart: on-failure
+    init: false
+    # cgroup: private
+    ports:
+      - 4646:4646
+    volumes:
+      - "/sys/fs/cgroup:/sys/fs/cgroup:ro"
+    tmpfs:
+      - /tmp
+      - /run
+    networks:
+      - hind
+  nomad-client:
+    image: nomad-client:testing
+    tty: true
+    privileged: true
+    restart: on-failure
+    init: false
+    # cgroup: private
+    security_opt:
+      - seccomp:unconfined
+      - apparmor=unconfined
+    volumes:
+      - "/sys/fs/cgroup:/sys/fs/cgroup:ro"
+      - "/lib/modules:/lib/modules:ro"
+    tmpfs:
+      - /tmp
+      - /run
+    networks:
+      - hind
+    deploy:
+      replicas: ${NOMAD_CLIENT_COUNT:-1}
+networks:
+  hind:
