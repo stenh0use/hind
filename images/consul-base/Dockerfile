@@ -12,7 +12,7 @@ ARG BASE_IMAGE=debian:bullseye-slim
 FROM $BASE_IMAGE as build
 
 # This is the release of Consul to pull in.
-ARG CONSUL_VERSION=1.15.3
+ARG CONSUL_VERSION
 
 # This is the location of the releases.
 ENV HASHICORP_RELEASES=https://releases.hashicorp.com

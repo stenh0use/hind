@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -e
+
+if [ "$CILIUM_ENABLED" -eq 1 ]; then
+    if ! test -f "/opt/cni/config/cilium.conflist"; then
+        ln -s /opt/cilium/config/cilium.conflist /opt/cni/config/cilium.conflist
+    fi
+    if ! test -f "/opt/cni/bin/cilium-cni"; then
+        ln -s /opt/cilium/bin/cilium-cni /opt/cni/bin/cilium-cni
+    fi
+    systemctl enable cilium
+else
+    systemctl disable cilium
+    rm -f /opt/cni/config/cilium.conflist 2>/dev/null || true
+    rm -f /opt/cni/bin 2>/dev/null 2>/dev/null || true
+fi
+
+if [ -n "${CILIUM_IPV4_RANGE}" ]; then
+    sed -i "s@^\\(CILIUM_IPV4_RANGE=\\).*\$@\\1${CILIUM_IPV4_RANGE}@g" \
+        /etc/cilium/cilium.env
+fi
