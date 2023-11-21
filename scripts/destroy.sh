@@ -5,20 +5,19 @@ set -e
 containers=(
     "hind.consul.server"
     "hind.nomad.server"
-    "hind.nomad.client.1"
+    "hind.nomad.client"
 )
 
 for container in ${containers[@]}; do
-    container_name=$container
-    container_status=$(docker ps --no-trunc --format json \
-    | jq "select(.Names == \"${container_name}\")")
+    container_ids=$(docker ps --no-trunc --format json \
+        | jq -r "select(.Names | startswith(\"${container}\")) | .ID")
 
-    if [ -n "${container_status}" ]; then
-        echo -e "INFO\t conatiner: stopping $container_name"
-        docker stop ${container_name} > /dev/null
-        docker rm ${container_name} > /dev/null
+    if [ -n "${container_ids}" ]; then
+        echo -e "INFO\t conatiner: stopping $container"
+        docker stop ${container_ids} > /dev/null
+        docker rm ${container_ids} > /dev/null
     else
-        echo -e "INFO\t container: $container_name is already stopped"
+        echo -e "INFO\t container: $container is already stopped"
     fi
 done
 

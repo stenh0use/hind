@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+ebpf_mount=$(mount | grep "bpffs on /sys/fs/bpf type bpf")
+if [ -z "$ebpf_mount" ]; then
+    mount -t bpf bpffs /sys/fs/bpf
+    mount --make-shared /sys/fs/bpf
+fi
+
+bpf_mount_fs_type=$(stat -fc %T /sys/fs/bpf)
+if [ "$bpf_mount_fs_type" != "bpf_fs" ]; then
+    printf "ERROR\t/sys/fs/bpf is not mounted as bpf_fs"
+    exit 1
+fi
+
+cilium_mount=$(mount | grep "none on /run/cilium/cgroupv2 type cgroup2")
+if [ -z "$cilium_mount" ]; then
+    mkdir -p /var/run/cilium/cgroupv2
+    mount -t cgroup2 none /var/run/cilium/cgroupv2
+    mount --make-shared /var/run/cilium/cgroupv2
+fi
+
+cilium_mount_fs_type=$(stat -fc %T /var/run/cilium/cgroupv2)
+if [ "$cilium_mount_fs_type" != "cgroup2fs" ]; then
+    printf "ERROR\t/var/run/cilium/cgroupv2 is not mounted as cgroup2fs"
+    exit 1
+fi

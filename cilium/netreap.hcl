@@ -24,7 +24,7 @@ job "netreap" {
         NETREAP_DEBUG = "true"
       }
       config {
-        image        = "ghcr.io/cosmonic/netreap:0.1.0"
+        image        = "ghcr.io/cosmonic/netreap:0.2.0"
         network_mode = "host"
         # You must be able to mount volumes from the host system so that
         # Netreap can use the Cilium API over a Unix socket.

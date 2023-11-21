@@ -9,8 +9,10 @@ if [ "$CILIUM_ENABLED" -eq 1 ]; then
         ln -s /opt/cilium/bin/cilium-cni /opt/cni/bin/cilium-cni
     fi
     systemctl enable cilium
+    systemctl enable cilium-mounts
 else
     systemctl disable cilium
+    systemctl disable cilium-mounts
     rm -f /opt/cni/config/cilium.conflist 2>/dev/null || true
     rm -f /opt/cni/bin 2>/dev/null 2>/dev/null || true
 fi

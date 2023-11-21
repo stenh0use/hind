@@ -59,10 +59,11 @@ ARG CILIUM_SERVICE=disable
 
 RUN mkdir -p /opt/cilium/bin \
     && mkdir -p /opt/cilium/config
-COPY --from=cilium/cilium:v1.13.2 /opt/cni/bin/cilium-cni /opt/cilium/bin/cilium-cni
-COPY --from=cilium/cilium:v1.13.2 /usr/bin/cilium* /usr/local/bin/
+COPY --from=cilium/cilium:v1.13.5 /opt/cni/bin/cilium-cni /opt/cilium/bin/cilium-cni
+COPY --from=cilium/cilium:v1.13.5 /usr/bin/cilium* /usr/local/bin/
 COPY --chmod=0644 rootfs/etc/systemd/system/* /etc/systemd/system/
 COPY --chmod=0644 rootfs/etc/cilium/* /etc/cilium/
 COPY --chmod=0644 rootfs/opt/cni/config/* /opt/cilium/config/
 
-RUN systemctl ${CILIUM_SERVICE} cilium
+RUN systemctl ${CILIUM_SERVICE} cilium-mounts \
+    && systemctl ${CILIUM_SERVICE} cilium

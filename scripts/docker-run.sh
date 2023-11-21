@@ -12,19 +12,21 @@ container_status=$(docker ps --no-trunc --format json \
 function docker_run {
     # Run docker container
     docker run \
+    --cgroupns=private \
     --detach \
     --init=false \
     --name ${container_name} \
     --network ${network_name} \
     --privileged \
-    --restart on-failure \
+    --restart on-failure:1 \
     --tmpfs /run \
     --tmpfs /tmp \
     --tty \
-    --volume /sys/fs/cgroup:/sys/fs/cgroup:ro \
+    --security-opt seccomp=unconfined \
+    --security-opt apparmor=unconfined \
+    --volume /lib/modules:/lib/modules:ro \
     ${args[@]} \
     ${image_name}:${HIND_VERSION} > /dev/null
-    # --cgroupns=private \
 }
 
 if [ -z "${container_status}" ]; then

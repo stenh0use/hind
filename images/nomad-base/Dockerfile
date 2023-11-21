@@ -90,7 +90,7 @@ ENV DEBIAN_FRONTEND noninteractive
 # Expose the nomad data directory as a volume since there's mutable state in there.
 VOLUME /nomad/data
 EXPOSE 4646 4647 4648 4648/udp
-VOLUME [ "/sys/fs/cgroup" ]
+
 # systemd exits on SIGRTMIN+3, not SIGTERM (which re-executes it)
 # https://bugzilla.redhat.com/show_bug.cgi?id=1201657
 STOPSIGNAL SIGRTMIN+3

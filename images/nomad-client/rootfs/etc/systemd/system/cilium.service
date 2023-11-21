@@ -5,12 +5,14 @@ Requires=docker.service
 After=consul.service
 Wants=consul.service
 Before=nomad.service
+After=cilium-mounts.service
+Requires=cilium-mounts.service
 [Service]
 Restart=always
 EnvironmentFile=/etc/cilium/cilium.env
 ExecStartPre=-/usr/bin/docker exec %n stop
 ExecStartPre=-/usr/bin/docker rm %n
-ExecStartPre=-/usr/bin/docker pull cilium/cilium:v1.13.2
+ExecStartPre=-/usr/bin/docker pull cilium/cilium:v1.13.5
 ExecStart=/usr/bin/docker run --rm --name %n \
   -v /var/run/cilium:/var/run/cilium \
   -v /sys/fs/bpf:/sys/fs/bpf \
@@ -22,7 +24,7 @@ ExecStart=/usr/bin/docker run --rm --name %n \
   --cap-add SYS_ADMIN \
   --cap-add SYS_RESOURCE \
   --privileged \
-  cilium/cilium:v1.13.2 \
+  cilium/cilium:v1.13.5 \
   cilium-agent --kvstore consul --kvstore-opt consul.address=127.0.0.1:8500 \
     --enable-ipv6=false -t geneve \
     --enable-l7-proxy=false  \
