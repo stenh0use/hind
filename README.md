@@ -46,13 +46,13 @@ CILIUM_ENABLED=1 make up
 Once the stack is up and running, you can deploy the netreap service
 ```
 # Check cilium health
-docker exec hind.nomad.client.1 cilium status
+docker exec hind.nomad.client.01 cilium status
 ```
 It might take a few minutes for Cilium to come up as healthy. When the last line says `Cluster health:          1/1 reachable` and the remaining helthchecks are passing you should be good to move on (approx 2-5min).
 
 Once you've confirmed cilium agent is healthy you'll need to restart the nomad service.
 ```
-docker exec hind.nomad.client.1 systemctl restart nomad
+docker exec hind.nomad.client.01 systemctl restart nomad
 ```
 You can now run the netreap job.
 ```
@@ -103,4 +103,4 @@ There is no client persistence when running up and down.
 - enable client scaling
 - add comments for where code is copied
 - add sysctls for nomad client and consul??
-- add other driver installs? optional java?
+- install bpftool
