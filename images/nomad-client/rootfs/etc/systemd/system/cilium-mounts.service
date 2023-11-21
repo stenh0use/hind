@@ -1,0 +1,6 @@
+[Unit]
+Description=Cilium init for bpf and cgroupv2 fs
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/cilium-mounts

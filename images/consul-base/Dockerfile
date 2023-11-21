@@ -12,7 +12,7 @@ ARG BASE_IMAGE=debian:bullseye-slim
 FROM $BASE_IMAGE as build
 
 # This is the release of Consul to pull in.
-ARG CONSUL_VERSION=1.15.3
+ARG CONSUL_VERSION
 
 # This is the location of the releases.
 ENV HASHICORP_RELEASES=https://releases.hashicorp.com
@@ -109,7 +109,7 @@ EXPOSE 8301 8301/udp 8302 8302/udp
 # HTTP and DNS (both TCP and UDP) are the primary interfaces that applications
 # use to interact with Consul.
 EXPOSE 8500 8600 8600/udp
-VOLUME [ "/sys/fs/cgroup" ]
+
 # systemd exits on SIGRTMIN+3, not SIGTERM (which re-executes it)
 # https://bugzilla.redhat.com/show_bug.cgi?id=1201657
 STOPSIGNAL SIGRTMIN+3

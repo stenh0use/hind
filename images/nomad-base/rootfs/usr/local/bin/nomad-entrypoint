@@ -25,4 +25,8 @@ fi
 echo "NOMAD_CONFIG_DIR=$NOMAD_CONFIG_DIR" >> "$NOMAD_CONFIG_DIR/nomad.env"
 echo "NOMAD_DATA_DIR=$NOMAD_DATA_DIR" >> "$NOMAD_CONFIG_DIR/nomad.env"
 
+if test -f "/usr/local/bin/nomad-client"; then
+    /usr/local/bin/nomad-client
+fi
+
 exec "$@"

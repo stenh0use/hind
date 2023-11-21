@@ -1,12 +1,15 @@
-ARG BASE_IMAGE=nomad:testing
+ARG BASE_IMAGE
 FROM $BASE_IMAGE
 
 ENV DOCKER_RELEASES=https://download.docker.com/linux/debian/dists/bullseye/pool/stable
-ENV CONTAINERD_VERSION=1.6.9-1
-ENV DOCKER_CE_VERSION=24.0.2-1
+ARG CONTAINERD_VERSION=1.6.9-1
+ARG DOCKER_CE_VERSION=24.0.2-1
+ENV container=docker
 
 # all non-scripts are 0644 (rw- r-- r--)
 COPY --chmod=0644 rootfs/etc/nomad.d/* /etc/nomad.d/
+# all scripts are 0755 (rwx r-x r-x)
+COPY --chmod=0755 rootfs/usr/local/bin/* /usr/local/bin/
 
 RUN sed -i "s/^User=.*\$/User=root/g" /etc/systemd/system/nomad.service \
     && sed -i "s/^Group=.*\$/Group=root/g" /etc/systemd/system/nomad.service
@@ -34,7 +37,7 @@ RUN set -eux \
 RUN systemctl enable docker
 
 ENV CNI_RELEASES=https://github.com/containernetworking/plugins/releases
-ENV CNI_VERSION=1.3.0
+ARG CNI_VERSION=1.3.0
 
 RUN set -eux \
     && mkdir -p /tmp/build \
@@ -48,5 +51,19 @@ RUN set -eux \
     && wget ${CNI_RELEASES}/download/v${CNI_VERSION}/cni-plugins-linux-${nomadArch}-v1.3.0.tgz \
     && tar -xvf cni-plugins-linux-${nomadArch}-v1.3.0.tgz \
     && mkdir -p /opt/cni/bin \
+    && mkdir -p /opt/cni/config \
     && for file in "bridge" "dhcp" "host-local" "loopback" "firewall" "portmap" "ptp"; do cp $file /opt/cni/bin; done \
     && rm -rf /tmp/build
+
+ARG CILIUM_SERVICE=disable
+
+RUN mkdir -p /opt/cilium/bin \
+    && mkdir -p /opt/cilium/config
+COPY --from=cilium/cilium:v1.13.5 /opt/cni/bin/cilium-cni /opt/cilium/bin/cilium-cni
+COPY --from=cilium/cilium:v1.13.5 /usr/bin/cilium* /usr/local/bin/
+COPY --chmod=0644 rootfs/etc/systemd/system/* /etc/systemd/system/
+COPY --chmod=0644 rootfs/etc/cilium/* /etc/cilium/
+COPY --chmod=0644 rootfs/opt/cni/config/* /opt/cilium/config/
+
+RUN systemctl ${CILIUM_SERVICE} cilium-mounts \
+    && systemctl ${CILIUM_SERVICE} cilium

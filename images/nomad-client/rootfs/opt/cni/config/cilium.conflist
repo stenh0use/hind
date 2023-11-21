@@ -1,0 +1,10 @@
+{
+  "name": "cilium",
+  "cniVersion": "1.0.0",
+  "plugins": [
+    {
+      "type": "cilium-cni",
+      "enable-debug": false
+    }
+  ]
+}

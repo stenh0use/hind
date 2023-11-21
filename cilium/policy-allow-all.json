@@ -1,0 +1,65 @@
+[
+  {
+    "labels": [
+      {
+        "key": "io.cosmonic.cilium_health"
+      }
+    ],
+    "endpointSelector": {
+      "matchLabels": {
+        "reserved:health": ""
+      }
+    },
+    "ingress": [
+      {
+        "fromEntities": ["remote-node", "host"]
+      }
+    ],
+    "egress": [
+      {
+        "fromEntities": ["remote-node", "host"]
+      }
+    ]
+  },
+  {
+    "endpointSelector": {},
+    "labels": [
+      {
+        "key": "io.cosmonic.default_rule"
+      }
+    ],
+    "ingress": [
+      {
+        "fromCIDRSet": [
+          {
+            "cidr": "0.0.0.0/0"
+          }
+        ]
+      },
+      {
+        "fromEntities": ["host", "remote-node"]
+      }
+    ],
+    "egress": [
+      {
+        "toEntity": ["host"],
+        "toPorts": [
+          {
+            "ports": [
+              {
+                "port": "53"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "toCIDRSet": [
+          {
+            "cidr": "0.0.0.0/0"
+          }
+        ]
+      }
+    ]
+  }
+]

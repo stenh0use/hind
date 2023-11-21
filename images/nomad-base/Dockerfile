@@ -8,11 +8,11 @@
 # We don't rebuild the software because we want the exact checksums and
 # binary signatures to match the software and our builds aren't fully
 # reproducible currently.
-ARG BASE_IMAGE=consul-client:testing
+ARG BASE_IMAGE
 FROM $BASE_IMAGE as build
 
 # This is the release of Nomad to pull in.
-ARG NOMAD_VERSION=1.5.5
+ARG NOMAD_VERSION
 
 # This is the location of the releases.
 ENV HASHICORP_RELEASES=https://releases.hashicorp.com
@@ -90,7 +90,7 @@ ENV DEBIAN_FRONTEND noninteractive
 # Expose the nomad data directory as a volume since there's mutable state in there.
 VOLUME /nomad/data
 EXPOSE 4646 4647 4648 4648/udp
-VOLUME [ "/sys/fs/cgroup" ]
+
 # systemd exits on SIGRTMIN+3, not SIGTERM (which re-executes it)
 # https://bugzilla.redhat.com/show_bug.cgi?id=1201657
 STOPSIGNAL SIGRTMIN+3
