@@ -2,14 +2,19 @@ ARG BASE_IMAGE
 FROM $BASE_IMAGE
 
 ENV DOCKER_RELEASES=https://download.docker.com/linux/debian/dists/bullseye/pool/stable
-ARG CONTAINERD_VERSION=1.6.9-1
-ARG DOCKER_CE_VERSION=24.0.2-1
+ARG CONTAINERD_VERSION=1.6.26-1
+ARG DOCKER_CE_VERSION=24.0.7-1
 ENV container=docker
 
 # all non-scripts are 0644 (rw- r-- r--)
 COPY --chmod=0644 rootfs/etc/nomad.d/* /etc/nomad.d/
 # all scripts are 0755 (rwx r-x r-x)
 COPY --chmod=0755 rootfs/usr/local/bin/* /usr/local/bin/
+
+# copy unit files and service configs
+COPY --chmod=0644 rootfs/etc/systemd/system/* /etc/systemd/system/
+COPY --chmod=0644 rootfs/etc/cilium/* /etc/cilium/
+COPY --chmod=0644 rootfs/etc/docker/* /etc/docker/
 
 RUN sed -i "s/^User=.*\$/User=root/g" /etc/systemd/system/nomad.service \
     && sed -i "s/^Group=.*\$/Group=root/g" /etc/systemd/system/nomad.service
@@ -34,7 +39,8 @@ RUN set -eux \
     && cd /tmp \
     && rm -rf /tmp/build
 
-RUN systemctl enable docker
+RUN systemctl enable docker.service \
+    && systemctl enable containerd.service
 
 ENV CNI_RELEASES=https://github.com/containernetworking/plugins/releases
 ARG CNI_VERSION=1.3.0
@@ -61,8 +67,6 @@ RUN mkdir -p /opt/cilium/bin \
     && mkdir -p /opt/cilium/config
 COPY --from=cilium/cilium:v1.13.5 /opt/cni/bin/cilium-cni /opt/cilium/bin/cilium-cni
 COPY --from=cilium/cilium:v1.13.5 /usr/bin/cilium* /usr/local/bin/
-COPY --chmod=0644 rootfs/etc/systemd/system/* /etc/systemd/system/
-COPY --chmod=0644 rootfs/etc/cilium/* /etc/cilium/
 COPY --chmod=0644 rootfs/opt/cni/config/* /opt/cilium/config/
 
 RUN systemctl ${CILIUM_SERVICE} cilium-mounts \
