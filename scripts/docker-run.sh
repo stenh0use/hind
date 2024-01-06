@@ -25,6 +25,7 @@ function docker_run {
     --security-opt seccomp=unconfined \
     --security-opt apparmor=unconfined \
     --volume /lib/modules:/lib/modules:ro \
+    --volume /var \
     ${args[@]} \
     ${image_name}:${HIND_VERSION} > /dev/null
 }
