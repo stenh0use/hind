@@ -1,5 +1,5 @@
 # Hashistack in Docker (hind)
-This repository takes inspiration from the Kubernetes in Docker project. First iteration is very rough, consider this a WIP.
+This repository takes inspiration from the Kubernetes in Docker project. It's intended as a quick and easy playground for Nomad for testing as well as enabling multi-node integration and failure scenarios. It is a WIP and current functionality is very barebones.
 
 Implemented from the stack:
 - nomad
@@ -54,6 +54,7 @@ Once you've confirmed cilium agent is healthy you'll need to restart the nomad s
 ```
 docker exec hind.nomad.client.01 systemctl restart nomad
 ```
+## Deploying Netreap
 You can now run the netreap job.
 ```
 nomad run cilium/netreap.hcl
@@ -62,19 +63,17 @@ Apply a policy
 ```
 consul kv put netreap.io/policy @cilium/policy-allow-all.json
 ```
-Run a job using cilium
+## Running jobs with cilium
+Run an example job using cilium and test different network policies
 ```
 nomad run jobs/example-cilium.hcl
 ```
-Exec into the job
+Test curl against google and see that we can connect.
 ```
 nomad exec -i \
     -t $(curl localhost:4646/v1/job/example_cilium/allocations 2>/dev/null \
     | jq -r '.[0].ID') \
-    bash
-# install curl
-apt update && apt install curl -y
-curl google.com --head
+    curl google.com -v
 ```
 Apply deny policy
 ```
@@ -87,9 +86,25 @@ nomad exec -i \
     | jq -r '.[0].ID') \
     curl google.com -v
 ```
+## Deploying the hubble relay
+The [hubble relay](https://docs.cilium.io/en/stable/internals/hubble/#hubble-relay) job is configured to run as a service job, it will let you interact with hubble using the cli.
+
+To deploy the relay
+```
+nomad run cilium/hubble-relay.hcl
+```
+
+Checking the deployment health (assumes the job is deployed to the first node)
+```
+docker exec hind.nomad.client.01 hubble status
+Healthcheck (via localhost:4245): Ok
+Current/Max Flows: 485/4,095 (11.84%)
+Flows/s: 2.45
+Connected Nodes: 1/1
+```
 
 # Requirements
-This project has only been tested with MacOS and colima
+This project has been tested using MacOS, colima 0.6.x and requires cgroupsv2 enabled on the docker host.
 - [colima](https://github.com/abiosoft/colima)
 - [docker-cli](https://docs.docker.com/engine/install/binaries/#install-client-binaries-on-macos)
 - [buildx](https://github.com/abiosoft/colima/discussions/273)
@@ -100,7 +115,6 @@ This project has only been tested with MacOS and colima
 There is no client persistence when running up and down.
 
 # TODO
-- enable client scaling
-- add comments for where code is copied
-- add sysctls for nomad client and consul??
-- install bpftool
+- install bpftool?
+- improve cluster management tooling
+- add ingress load balancer

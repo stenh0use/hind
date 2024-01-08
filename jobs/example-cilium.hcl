@@ -4,11 +4,8 @@ job "example_cilium" {
     "cosmonic.io/app_name" = "example"
   }
 
-  group "cache" {
+  group "client" {
     network {
-      port "db" {
-        to = 6379
-      }
       // This selects the CNI plugin to use.
       // The name after "cni/" should match the conflist that is configured on
       // the Nomad node.
@@ -18,18 +15,19 @@ job "example_cilium" {
 
     service {
       name         = "example"
-      port         = "db"
       tags         = ["example"]
       address_mode = "alloc"
     }
 
-    task "redis" {
+    task "client" {
       driver = "docker"
 
       config {
-        image          = "redis:7"
-        ports          = ["db"]
-        auth_soft_fail = true
+        image = "quay.io/curl/curl:latest"
+        args = [
+          "sleep",
+          "infinity"
+        ]
       }
 
       identity {

@@ -19,6 +19,7 @@ COPY --chmod=0644 rootfs/etc/docker/* /etc/docker/
 RUN sed -i "s/^User=.*\$/User=root/g" /etc/systemd/system/nomad.service \
     && sed -i "s/^Group=.*\$/Group=root/g" /etc/systemd/system/nomad.service
 
+# install docker-ce and containerd
 RUN set -eux \
     && apt install -y iproute2 fuse-overlayfs \
     && mkdir -p /tmp/build \
@@ -42,6 +43,7 @@ RUN set -eux \
 RUN systemctl enable docker.service \
     && systemctl enable containerd.service
 
+# install standard CNI plugins
 ENV CNI_RELEASES=https://github.com/containernetworking/plugins/releases
 ARG CNI_VERSION=1.3.0
 
@@ -61,12 +63,14 @@ RUN set -eux \
     && for file in "bridge" "dhcp" "host-local" "loopback" "firewall" "portmap" "ptp"; do cp $file /opt/cni/bin; done \
     && rm -rf /tmp/build
 
+# install cilium cni plugin and service
 ARG CILIUM_SERVICE=disable
 
 RUN mkdir -p /opt/cilium/bin \
     && mkdir -p /opt/cilium/config
-COPY --from=cilium/cilium:v1.13.5 /opt/cni/bin/cilium-cni /opt/cilium/bin/cilium-cni
-COPY --from=cilium/cilium:v1.13.5 /usr/bin/cilium* /usr/local/bin/
+COPY --from=cilium/cilium:v1.13.9 /opt/cni/bin/cilium-cni /opt/cilium/bin/cilium-cni
+COPY --from=cilium/cilium:v1.13.9 /usr/bin/cilium* /usr/local/bin/
+COPY --from=cilium/cilium:v1.13.9 /usr/bin/hubble /usr/local/bin/
 COPY --chmod=0644 rootfs/opt/cni/config/* /opt/cilium/config/
 
 RUN systemctl ${CILIUM_SERVICE} cilium-mounts \
