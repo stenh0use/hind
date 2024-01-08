@@ -6,9 +6,9 @@ job "example" {
       }
     }
     service {
-      name         = "example"
-      port         = "db"
-      tags         = ["example"]
+      name = "example"
+      port = "db"
+      tags = ["example"]
     }
 
     task "redis" {

@@ -4,14 +4,14 @@ job "netreap" {
   type        = "system"
   constraint {
     attribute = "${attr.plugins.cni.version.cilium-cni}"
-    operator = "is_set"
+    operator  = "is_set"
   }
   group "netreap" {
     restart {
       interval = "10m"
       attempts = 5
-      delay = "15s"
-      mode = "delay"
+      delay    = "15s"
+      mode     = "delay"
     }
     service {
       name = "netreap"
@@ -21,7 +21,7 @@ job "netreap" {
       driver = "docker"
       env {
         NETREAP_CILIUM_CIDR = "10.8.0.0/16"
-        NETREAP_DEBUG = "true"
+        NETREAP_DEBUG       = "true"
       }
       config {
         image        = "ghcr.io/cosmonic/netreap:0.2.0"
