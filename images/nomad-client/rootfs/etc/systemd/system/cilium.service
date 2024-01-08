@@ -12,7 +12,7 @@ Restart=always
 EnvironmentFile=/etc/cilium/cilium.env
 ExecStartPre=-/usr/bin/docker exec %n stop
 ExecStartPre=-/usr/bin/docker rm %n
-ExecStartPre=-/usr/bin/docker pull cilium/cilium:v1.13.5
+ExecStartPre=-/usr/bin/docker pull cilium/cilium:v1.13.9
 ExecStart=/usr/bin/docker run --rm --name %n \
   -v /var/run/cilium:/var/run/cilium \
   -v /sys/fs/bpf:/sys/fs/bpf \
@@ -24,10 +24,13 @@ ExecStart=/usr/bin/docker run --rm --name %n \
   --cap-add SYS_ADMIN \
   --cap-add SYS_RESOURCE \
   --privileged \
-  cilium/cilium:v1.13.5 \
+  cilium/cilium:v1.13.9 \
   cilium-agent --kvstore consul --kvstore-opt consul.address=127.0.0.1:8500 \
     --enable-ipv6=false -t geneve \
     --enable-l7-proxy=false  \
+    --enable-hubble \
+    --hubble-disable-tls \
+    --hubble-listen-address ":4244" \
     --ipv4-range ${CILIUM_IPV4_RANGE}
 [Install]
 WantedBy=multi-user.target
