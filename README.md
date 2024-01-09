@@ -24,6 +24,11 @@ To tear down the stack
 ```
 make down
 ```
+To scale out the clients
+> note: to scale in you need to docker stop/rm the containers or run `make down` to reset the stack
+```
+NOMAD_CLIENT_COUNT=n make up  # where n is the desired client count
+```
 To connect to the web ui for nomad/consul
 ```
 # nomad
