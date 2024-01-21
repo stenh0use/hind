@@ -4,6 +4,16 @@ set -e
 
 script_dir="$(dirname "$0")"
 
+missing_images=$(
+    $script_dir/check-image.sh "hind.consul.server" "hind.nomad.server" "hind.nomad.client"
+)
+
+if [ -n "${missing_images}" ]; then
+    echo "Error detected missing 'hind' images"
+    echo "Please run 'make build' and try again"
+    exit 1
+fi
+
 network_name="hind"
 $script_dir/network-create.sh $network_name
 
