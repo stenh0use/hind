@@ -19,12 +19,20 @@ $script_dir/network-create.sh $network_name
 
 container_name="hind.consul.server"
 image_name="hind.consul.server"
-args=("-p 127.0.0.1:8500:8500/tcp")
+if [ "${LISTEN_LOCALHOST:-0}" -eq 1 ]; then
+    args=("-p 127.0.0.1:8500:8500/tcp")
+else
+    args=("-p 8500:8500/tcp")
+fi
 $script_dir/docker-run.sh $container_name $network_name $image_name ${args[@]}
 
 container_name="hind.nomad.server"
 image_name="hind.nomad.server"
-args=("-p 127.0.0.1:4646:4646/tcp")
+if [ "${LISTEN_LOCALHOST:-0}" -eq 1 ]; then
+    args=("-p 127.0.0.1:4646:4646/tcp")
+else
+    args=("-p 4646:4646/tcp")
+fi
 $script_dir/docker-run.sh $container_name $network_name $image_name ${args[@]}
 
 container_name="hind.nomad.client"
