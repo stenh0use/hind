@@ -8,14 +8,19 @@ containers=(
     "hind.nomad.client"
 )
 
-for container in ${containers[@]}; do
-    container_ids=$(docker ps --no-trunc --format json \
-        | jq -r "select(.Names | startswith(\"${container}\")) | .ID")
+for container in "${containers[@]}"; do
+    container_json="$(docker ps -a --no-trunc --format json)"
+    container_ids=($(jq \
+        -r "select(.Names | startswith(\"${container}\")) | .ID" \
+        <<< "$container_json"))
+    container_names=($(jq \
+        -r "select(.Names | startswith(\"${container}\")) | .Names" \
+        <<< "$container_json"))
 
-    if [ -n "${container_ids}" ]; then
-        echo -e "INFO\t conatiner: stopping $container"
-        docker stop ${container_ids} > /dev/null
-        docker rm ${container_ids} > /dev/null
+    if [ ${#container_ids[@]} -gt 0 ]; then
+        printf "INFO\t container: stopping %s\n" "${container_names[@]}"
+        docker stop "${container_ids[@]}" > /dev/null
+        docker rm "${container_ids[@]}" > /dev/null
     else
         echo -e "INFO\t container: $container is already stopped"
     fi
@@ -28,5 +33,5 @@ if [ -z "${network_status}" ]; then
     echo -e "INFO\t network: $network_name has already been removed"
 else
     echo -e "INFO\t network: removing $network_name"
-    docker network rm $network_name > /dev/null
+    docker network rm "$network_name" > /dev/null
 fi
