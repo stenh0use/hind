@@ -5,7 +5,7 @@ set -e
 script_dir="$(dirname "$0")"
 
 missing_images=$(
-    $script_dir/check-image.sh "hind.consul.server" "hind.nomad.server" "hind.nomad.client"
+    "$script_dir"/check-image.sh "hind.consul.server" "hind.nomad.server" "hind.nomad.client"
 )
 
 if [ -n "${missing_images}" ]; then
@@ -15,7 +15,7 @@ if [ -n "${missing_images}" ]; then
 fi
 
 network_name="hind"
-$script_dir/network-create.sh $network_name
+"$script_dir"/network-create.sh "$network_name"
 
 container_name="hind.consul.server"
 image_name="hind.consul.server"
@@ -24,7 +24,7 @@ if [ "${LISTEN_LOCALHOST:-0}" -eq 1 ]; then
 else
     args=("-p 8500:8500/tcp")
 fi
-$script_dir/docker-run.sh $container_name $network_name $image_name ${args[@]}
+"$script_dir"/docker-run.sh "$container_name" "$network_name" "$image_name" "${args[@]}"
 
 container_name="hind.nomad.server"
 image_name="hind.nomad.server"
@@ -33,7 +33,7 @@ if [ "${LISTEN_LOCALHOST:-0}" -eq 1 ]; then
 else
     args=("-p 4646:4646/tcp")
 fi
-$script_dir/docker-run.sh $container_name $network_name $image_name ${args[@]}
+"$script_dir"/docker-run.sh "$container_name" "$network_name" "$image_name" "${args[@]}"
 
 container_name="hind.nomad.client"
 image_name="hind.nomad.client"
@@ -43,6 +43,6 @@ args=(
     "-e CILIUM_IPV4_RANGE=${CILIUM_IPV4_RANGE}"
 )
 
-for count in $(seq -f "%02g" ${NOMAD_CLIENT_COUNT:-1}); do
-    $script_dir/docker-run.sh $container_name.$count $network_name $image_name ${args[@]}
+for count in $(seq -f "%02g" "${NOMAD_CLIENT_COUNT:-1}"); do
+    "$script_dir"/docker-run.sh "$container_name.$count" "$network_name" "$image_name" "${args[@]}"
 done
