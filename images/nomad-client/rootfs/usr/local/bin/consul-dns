@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+#
+# This script is used to ensure systemd-resolved is using consul DNS
+# and verify that it is working correctly.
+#
+
+log_info() {
+	echo "INFO: $1"
+}
+
+log_error() {
+	echo "ERROR: $1" >&2
+}
+
+wait_for_consul_dns() {
+	# Wait until consul DNS is up
+	for i in {1..5}; do
+		consul_dns_listening=$(ss -tulpn | grep LISTEN.*8600)
+		if [ $? -eq 0 ]; then
+			log_info "Consul DNS is up"
+			return
+		elif [ $i -eq 5 ]; then
+			log_error "Consul DNS is not up after 5 retries"
+			exit 1
+		fi
+		log_info "Consul DNS is not up, retrying in 5 seconds"
+		sleep 5
+	done
+}
+
+healthcheck() {
+	# Check systemd-resolved is active
+	systemd_resolved_is_active=$(systemctl is-active systemd-resolved 2>&1)
+	if [ "$systemd_resolved_is_active" != "active" ]; then
+		log_error "systemd-resolved is not active"
+		log_error "message - $systemd_resolved_is_active"
+		return 1
+	fi
+
+	# Check that the consul domain is set to global
+	resolvectl_domain=$(resolvectl domain 2>&1 | head -n 1)
+	if [ "$resolvectl_domain" != "Global: ~consul" ]; then
+		log_error "Consul domain is not set to global"
+		log_error "message - $resolvectl_domain"
+		return 1
+	fi
+
+	# Check that consul.service.consul resolves correctly
+	consul_dns=$(resolvectl query consul.service.consul 2>&1)
+	if [ $? -ne 0 ]; then
+		log_error "consul.service.consul not resolving correctly"
+		log_error "message - $consul_dns"
+		return 1
+	fi
+}
+
+# Restart systemd-resolved to apply the changes
+log_info "Restarting systemd-resolved"
+systemctl restart systemd-resolved
+
+wait_for_consul_dns
+
+# We can't symlink resolv.conf file in docker so we need to modify it directly
+log_info "Updating '/etc/resolv.conf' file"
+cat /run/systemd/resolve/stub-resolv.conf > /etc/resolv.conf
+
+# Run the healthcheck 5 times
+for i in {1..5}; do
+	healthcheck
+	if [ $? -eq 0 ]; then
+		log_info "Healthcheck passed"
+		exit 0
+	fi
+	echo "Healthcheck failed, retrying in 5 seconds"
+	sleep 5
+done
+
+log_error "Healthcheck failed after 5 retries"
+exit 1
