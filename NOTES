@@ -1,0 +1,39 @@
+https://gist.github.com/pinkeen/bba0a6790fec96d6c8de84bd824ad933
+
+^ interesting gist about docker cgroupv2
+
+https://serverfault.com/questions/1053187/systemd-fails-to-run-in-a-docker-container-when-using-cgroupv2-cgroupns-priva/1054414#1054414
+
+https://github.com/mviereck/x11docker/issues/349#issuecomment-1034346442
+
+https://baykara.medium.com/docker-resource-management-via-cgroups-and-systemd-633b093a835c
+
+https://docs.docker.com/engine/security/userns-remap/
+
+# Confirm Cgroupv2
+stat -fc %T /sys/fs/cgroup/
+cgroup2fs
+
+----
+```bash
+#!/usr/bin/env bash
+# this script came from the below issue
+# https://github.com/abiosoft/colima/issues/663#issuecomment-1587135391
+
+# printf "=== Starting Colima with Kubernetes but no CNI\n"
+# colima start --memory 8 --cpu 4 \
+#     --kubernetes --kubernetes-disable="" \
+#     --k3s-arg "--disable-network-policy" \
+#     --k3s-arg "--flannel-backend=none"
+
+printf "=== Creating BPF and cgroup mounts on the Colima VM\n"
+colima ssh -- sudo mount -t bpf bpffs /sys/fs/bpf
+colima ssh -- sudo mount --make-shared /sys/fs/bpf
+colima ssh -- sudo mkdir -p /run/cilium/cgroupv2
+colima ssh -- sudo mount -t cgroup2 none /run/cilium/cgroupv2
+colima ssh -- sudo mount --make-shared /run/cilium/cgroupv2
+colima ssh -- sudo mount --make-shared /
+
+# printf "=== Installing Cilium\n"
+# cilium --context=colima install
+```
