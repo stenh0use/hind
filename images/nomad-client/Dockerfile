@@ -2,8 +2,8 @@ ARG BASE_IMAGE
 FROM $BASE_IMAGE
 
 ENV DOCKER_RELEASES=https://download.docker.com/linux/debian/dists/bullseye/pool/stable
-ARG CONTAINERD_VERSION=1.6.26-1
-ARG DOCKER_CE_VERSION=24.0.7-1
+ARG CONTAINERD_VERSION=1.6.31-1
+ARG DOCKER_CE_VERSION=26.0.1-1
 ENV container=docker
 
 # all non-scripts are 0644 (rw- r-- r--)
