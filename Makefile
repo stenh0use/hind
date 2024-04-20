@@ -5,9 +5,9 @@ CILIUM_ENABLED ?= 0
 NOMAD_CLIENT_COUNT ?= 1
 
 BASE_IMAGE = debian:bullseye-slim
-CONSUL_VERSION = 1.16.2
-NOMAD_VERSION = 1.6.3
-HIND_VERSION = 0.1.1
+CONSUL_VERSION ?= 1.18.1
+NOMAD_VERSION ?= 1.7.6
+HIND_VERSION = 0.2.0
 
 ifeq ($(DOCKER_CACHE), 0)
 docker-cache="--no-cache"

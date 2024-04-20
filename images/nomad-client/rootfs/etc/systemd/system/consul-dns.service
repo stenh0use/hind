@@ -1,0 +1,11 @@
+[Unit]
+Description=Configure systemd-resolved to use Consul DNS
+Requires=consul.service
+After=consul.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/consul-dns
+
+[Install]
+WantedBy=multi-user.target

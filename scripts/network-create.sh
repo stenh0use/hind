@@ -7,7 +7,7 @@ network_status=$(docker network ls --format json | jq "select(.Name == \"${netwo
 
 function create_network {
     echo -e "INFO\t network: creating $network_name"
-    docker network create ${network_name} > /dev/null
+    docker network create "${network_name}" > /dev/null
 }
 
 if [ -z "${network_status}" ]; then

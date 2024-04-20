@@ -109,12 +109,134 @@ Connected Nodes: 1/1
 ```
 
 # Requirements
-This project has been tested using MacOS, colima 0.6.x and requires cgroupsv2 enabled on the docker host.
+This project has mainly been tested using MacOS, colima 0.6.x, and requires cgroupsv2 enabled on the docker host.
 - [colima](https://github.com/abiosoft/colima)
 - [docker-cli](https://docs.docker.com/engine/install/binaries/#install-client-binaries-on-macos)
 - [buildx](https://github.com/abiosoft/colima/discussions/273)
 - [nomad](https://developer.hashicorp.com/nomad/downloads) (used for cli commands)
 - [consul](https://developer.hashicorp.com/consul/downloads) (used for cli commands)
+
+## Docker info
+System and docker information confirmed working
+1. <details><summary>Colima, 0.6.7</summary></details>
+2. <details><summary>Debian GNU/Linux 12 (bookworm) - click for details</summary>
+
+        Client: Docker Engine - Community
+         Version:    24.0.7
+         Context:    default
+         Debug Mode: false
+         Plugins:
+          buildx: Docker Buildx (Docker Inc.)
+            Version:  v0.11.2
+            Path:     /Users/user/.docker/cli-plugins/docker-buildx
+
+        Server:
+         Containers: 4
+          Running: 4
+          Paused: 0
+          Stopped: 0
+         Images: 11
+         Server Version: 25.0.0
+         Storage Driver: overlay2
+          Backing Filesystem: extfs
+          Supports d_type: true
+          Using metacopy: false
+          Native Overlay Diff: true
+          userxattr: false
+         Logging Driver: json-file
+         Cgroup Driver: systemd
+         Cgroup Version: 2
+         Plugins:
+          Volume: local
+          Network: bridge host ipvlan macvlan null overlay
+          Log: awslogs fluentd gcplogs gelf journald json-file local splunk syslog
+         Swarm: inactive
+         Runtimes: io.containerd.runc.v2 runc
+         Default Runtime: runc
+         Init Binary: docker-init
+         containerd version: a1496014c916f9e62104b33d1bb5bd03b0858e59
+         runc version: v1.1.11-0-g4bccb38
+         init version: de40ad0
+         Security Options:
+          apparmor
+          seccomp
+           Profile: builtin
+          cgroupns
+         Kernel Version: 6.1.0-17-amd64
+         Operating System: Debian GNU/Linux 12 (bookworm)
+         OSType: linux
+         Architecture: x86_64
+         CPUs: 2
+         Total Memory: 1.921GiB
+         Name: debian
+         ID: 3eb5fae9-6504-4117-a93d-c099568e79c2
+         Docker Root Dir: /var/lib/docker
+         Debug Mode: false
+         Experimental: false
+         Insecure Registries:
+          127.0.0.0/8
+         Live Restore Enabled: false
+</details>
+
+
+3. <details><summary>Rocky Linux 9.3 (Blue Onyx) - click for details</summary>
+
+        Client: Docker Engine - Community
+         Version:    24.0.7
+         Context:    default
+         Debug Mode: false
+         Plugins:
+          buildx: Docker Buildx (Docker Inc.)
+            Version:  v0.11.2
+            Path:     /Users/user/.docker/cli-plugins/docker-buildx
+
+        Server:
+         Containers: 0
+          Running: 0
+          Paused: 0
+          Stopped: 0
+         Images: 0
+         Server Version: 24.0.7
+         Storage Driver: overlay2
+          Backing Filesystem: xfs
+          Supports d_type: true
+          Using metacopy: false
+          Native Overlay Diff: true
+          userxattr: false
+         Logging Driver: json-file
+         Cgroup Driver: systemd
+         Cgroup Version: 2
+         Plugins:
+          Volume: local
+          Network: bridge host ipvlan macvlan null overlay
+          Log: awslogs fluentd gcplogs gelf journald json-file local logentries splunk syslog
+         Swarm: inactive
+         Runtimes: io.containerd.runc.v2 runc
+         Default Runtime: runc
+         Init Binary: docker-init
+         containerd version: a1496014c916f9e62104b33d1bb5bd03b0858e59
+         runc version: v1.1.11-0-g4bccb38
+         init version: de40ad0
+         Security Options:
+          seccomp
+           Profile: builtin
+          selinux
+          cgroupns
+         Kernel Version: 5.14.0-362.13.1.el9_3.x86_64
+         Operating System: Rocky Linux 9.3 (Blue Onyx)
+         OSType: linux
+         Architecture: x86_64
+         CPUs: 2
+         Total Memory: 1.722GiB
+         Name: default
+         ID: 84a6e94a-7b3e-42ff-9370-1d0820695a55
+         Docker Root Dir: /var/lib/docker
+         Debug Mode: false
+         Experimental: false
+         Insecure Registries:
+          127.0.0.0/8
+         Live Restore Enabled: false
+</details>
 
 # Current limitations
 There is no client persistence when running up and down.
