@@ -1,0 +1,24 @@
+[Unit]
+Description=Vault Bootstrap and Unseal
+
+# Needs to have Vault to bootstrap
+Wants=vault.service
+After=vault.service
+BindsTo=vault.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/vault.d/vault.env
+
+User=vault
+Group=vault
+
+ExecStart=/bin/bash -c '/usr/local/bin/vault-bootstrap'
+KillMode=process
+KillSignal=SIGINT
+LimitNOFILE=65536
+LimitNPROC=infinity
+
+[Install]
+WantedBy=multi-user.target
+WantedBy=vault.service

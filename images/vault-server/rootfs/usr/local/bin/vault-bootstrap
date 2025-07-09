@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Bootstrap vault. This should be made to run after Vault is set up by systemd.
+set -e
+
+# Ignorant wait for vault to be up.
+sleep 2
+
+# Don't use a condition check in systemd because we always want to unseal vault.
+[[ -f "/vault/bootstrapped" ]] && vault operator unseal $VAULT_UNSEAL_KEY
+
+initconfig=$(vault operator init -key-shares=1 -key-threshold=1 -format=json)
+
+VAULT_ROOT_TOKEN=$(echo $initconfig | jq -r '.root_token')
+echo "VAULT_ROOT_TOKEN=$VAULT_ROOT_TOKEN" >> "$VAULT_CONFIG_DIR/vault.env"
+
+VAULT_UNSEAL_KEY=$(echo $initconfig | jq -r '.unseal_keys_b64[0]')
+echo "VAULT_UNSEAL_KEY=$VAULT_UNSEAL_KEY" >> "$VAULT_CONFIG_DIR/vault.env"
+
+vault operator unseal $VAULT_UNSEAL_KEY
+
+# Create a default token. This is local, after all.
+VAULT_TOKEN=$VAULT_ROOT_TOKEN vault token create -policy=root -explicit-max-ttl=0 -id="root"
+
+touch /vault/bootstrapped

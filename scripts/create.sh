@@ -5,7 +5,7 @@ set -e
 script_dir="$(dirname "$0")"
 
 missing_images=$(
-    "$script_dir"/check-image.sh "hind.consul.server" "hind.nomad.server" "hind.nomad.client"
+    "$script_dir"/check-image.sh "hind.consul.server" "hind.vault.server" "hind.nomad.server" "hind.nomad.client"
 )
 
 if [ -n "${missing_images}" ]; then
@@ -23,6 +23,15 @@ if [ "${LISTEN_LOCALHOST:-0}" -eq 1 ]; then
     args=("-p 127.0.0.1:8500:8500/tcp")
 else
     args=("-p 8500:8500/tcp")
+fi
+"$script_dir"/docker-run.sh "$container_name" "$network_name" "$image_name" "${args[@]}"
+
+container_name="hind.vault.server"
+image_name="hind.vault.server"
+if [ "${LISTEN_LOCALHOST:-0}" -eq 1 ]; then
+    args=("-p 127.0.0.1:8200:8200/tcp")
+else
+    args=("-p 8200:8200/tcp")
 fi
 "$script_dir"/docker-run.sh "$container_name" "$network_name" "$image_name" "${args[@]}"
 
