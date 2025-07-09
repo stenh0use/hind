@@ -7,6 +7,7 @@ NOMAD_CLIENT_COUNT ?= 1
 BASE_IMAGE = debian:bullseye-slim
 CONSUL_VERSION ?= 1.18.1
 NOMAD_VERSION ?= 1.7.6
+VAULT_VERSION ?= 1.15.4
 HIND_VERSION = 0.2.0
 
 ifeq ($(DOCKER_CACHE), 0)
@@ -26,7 +27,7 @@ down:
 	@./scripts/destroy.sh
 
 .PHONY: build
-build: consul nomad
+build: consul vault nomad
 
 .PHONY: consul
 consul: consul-base consul-server consul-client
@@ -83,3 +84,15 @@ nomad-client:
 	-f ./images/nomad-client/Dockerfile \
 	-t hind.nomad.client:$(HIND_VERSION) \
 	./images/nomad-client
+
+.PHONY: vault
+vault: vault-server
+
+.PHONY: vault-server
+vault-server:
+	@docker build $(docker-cache) \
+	--build-arg="BASE_IMAGE=hind.consul.client:$(HIND_VERSION)" \
+	--build-arg="VAULT_VERSION=$(VAULT_VERSION)" \
+	-f ./images/vault-server/Dockerfile \
+	-t hind.vault.server:$(HIND_VERSION) \
+	./images/vault-server

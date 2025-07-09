@@ -4,6 +4,7 @@ set -e
 
 containers=(
     "hind.consul.server"
+    "hind.vault"
     "hind.nomad.server"
     "hind.nomad.client"
 )

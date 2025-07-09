@@ -1,0 +1,52 @@
+[Unit]
+Description=Vault
+Documentation=https://www.vaultproject.io/docs/
+Wants=network-online.target
+After=network-online.target
+
+# When using Vault with Consul it is not necessary to start Consul first. These
+# lines start Consul before Vault as an optimization to avoid Vault logging
+# that Consul is unavailable at startup.
+Wants=consul.service
+After=consul.service
+
+ConditionFileNotEmpty=/etc/vault.d/vault.hcl
+
+[Service]
+EnvironmentFile=-/etc/vault.d/vault.env
+
+# Vault server should be run as the vault user. Vault clients
+# should be run as root
+User=vault
+Group=vault
+
+ExecReload=/bin/kill -HUP $MAINPID
+ExecStart=/bin/bash -c '/bin/vault server \
+	-config=$VAULT_CONFIG_DIR'
+KillMode=process
+KillSignal=SIGINT
+LimitNOFILE=65536
+LimitNPROC=infinity
+Restart=on-failure
+RestartSec=2
+
+## Configure unit start rate limiting. Units which are started more than
+## *burst* times within an *interval* time span are not permitted to start any
+## more. Use `StartLimitIntervalSec` or `StartLimitInterval` (depending on
+## systemd version) to configure the checking interval and `StartLimitBurst`
+## to configure how many starts per interval are allowed. The values in the
+## commented lines are defaults.
+
+# StartLimitBurst = 5
+
+## StartLimitIntervalSec is used for systemd versions >= 230
+# StartLimitIntervalSec = 10s
+
+## StartLimitInterval is used for systemd versions < 230
+# StartLimitInterval = 10s
+
+TasksMax=infinity
+OOMScoreAdjust=-1000
+
+[Install]
+WantedBy=multi-user.target
