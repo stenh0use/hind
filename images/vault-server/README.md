@@ -1,1 +1,0 @@
-This dockerfile is adapted from https://github.com/multani/docker-nomad
