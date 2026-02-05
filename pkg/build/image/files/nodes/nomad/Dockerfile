@@ -44,6 +44,7 @@ RUN addgroup nomad \
     && adduser --system --group nomad \
     && mkdir -p /nomad/data \
     && mkdir -p /etc/nomad.d \
+    && chmod 0744 /etc/nomad.d \
     && chown -R nomad:nomad /nomad /etc/nomad.d
 
 # Set up certificates, base tools, and Nomad.
