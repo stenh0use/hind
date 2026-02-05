@@ -189,9 +189,10 @@ func (m *Manager) Stop(ctx context.Context) error {
 }
 
 func (m *Manager) Delete(ctx context.Context) error {
-	// Load cluster config from disk if not already in memory
-	// This allows Delete to work even if Manager was created without loading config
-	if m.config == nil || m.config.Name == "" {
+	existed := m.ConfigFileExists()
+
+	if existed {
+		// Load existing config, else just use the config created by New()
 		cfg, err := m.loadConfig()
 		if err != nil {
 			return fmt.Errorf("failed to load cluster config: %w", err)
