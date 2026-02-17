@@ -3,13 +3,14 @@ package list
 import (
 	"context"
 	"fmt"
-	"os"
 	"text/tabwriter"
 	"time"
 
 	"github.com/apex/log"
 	"github.com/spf13/cobra"
+
 	"github.com/stenh0use/hind/pkg/cluster"
+	"github.com/stenh0use/hind/pkg/cmd"
 	"github.com/stenh0use/hind/pkg/config"
 	"github.com/stenh0use/hind/pkg/provider"
 )
@@ -26,25 +27,25 @@ type clusterStatus struct {
 }
 
 // NewCommand creates the cluster list command
-func NewCommand(logger *log.Logger) *cobra.Command {
+func NewCommand(logger *log.Logger, streams cmd.IOStreams) *cobra.Command {
 	var timeout time.Duration
 
-	cmd := &cobra.Command{
+	command := &cobra.Command{
 		Use:   "list",
 		Short: "List all hind clusters",
 		Long:  "List all hind clusters and their status",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runE(cmd.Context(), logger, timeout)
+			return runE(cmd.Context(), logger, streams, timeout)
 		},
 	}
 
-	cmd.Flags().DurationVar(&timeout, "timeout", DefaultListTimeout, "Timeout for listing clusters")
+	command.Flags().DurationVar(&timeout, "timeout", DefaultListTimeout, "Timeout for listing clusters")
 
-	return cmd
+	return command
 }
 
-func runE(ctx context.Context, logger *log.Logger, timeout time.Duration) error {
+func runE(ctx context.Context, logger *log.Logger, streams cmd.IOStreams, timeout time.Duration) error {
 	logger.WithField("timeout", timeout).Debug("Listing clusters with timeout")
 
 	// Get list of cluster names
@@ -54,7 +55,7 @@ func runE(ctx context.Context, logger *log.Logger, timeout time.Duration) error 
 	}
 
 	if len(clusters) == 0 {
-		fmt.Println("No clusters found")
+		fmt.Fprintln(streams.ErrOut, "No clusters found")
 		return nil
 	}
 
@@ -80,7 +81,7 @@ func runE(ctx context.Context, logger *log.Logger, timeout time.Duration) error 
 	}
 
 	// Print clusters in table format
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
+	w := tabwriter.NewWriter(streams.Out, 0, 0, 3, ' ', 0)
 	fmt.Fprintln(w, "NAME\tACTIVE\tSTATUS\tNODES\tCREATED")
 
 	for _, clusterName := range clusters {

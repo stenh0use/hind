@@ -6,6 +6,7 @@ import (
 	"github.com/apex/log"
 	"github.com/spf13/cobra"
 
+	"github.com/stenh0use/hind/pkg/cmd"
 	"github.com/stenh0use/hind/pkg/cmd/hind/build"
 	"github.com/stenh0use/hind/pkg/cmd/hind/get"
 	"github.com/stenh0use/hind/pkg/cmd/hind/list"
@@ -17,8 +18,8 @@ import (
 )
 
 // NewCommand returns a new cobra.Command implementing the root command for hind
-func NewCommand(logger *log.Logger) *cobra.Command {
-	cmd := &cobra.Command{
+func NewCommand(logger *log.Logger, streams cmd.IOStreams) *cobra.Command {
+	rootCmd := &cobra.Command{
 		Use:   "hind",
 		Short: "hind is a tool for running hashistack clusters in docker",
 		Long: strings.Join([]string{
@@ -30,14 +31,20 @@ func NewCommand(logger *log.Logger) *cobra.Command {
 		SilenceErrors: true,
 		Version:       version.DisplayVersion(),
 	}
+
+	// Set IO streams for the root command
+	rootCmd.SetOut(streams.Out)
+	rootCmd.SetErr(streams.ErrOut)
+
 	// Add subcommands
-	cmd.AddCommand(build.NewCommand(logger))
-	cmd.AddCommand(get.NewCommand(logger))
-	cmd.AddCommand(list.NewCommand(logger))
-	cmd.AddCommand(rm.NewCommand(logger))
-	cmd.AddCommand(set.NewCommand(logger))
-	cmd.AddCommand(start.NewCommand(logger))
-	cmd.AddCommand(stop.NewCommand(logger))
-	cmd.AddCommand(version.NewCommand(logger))
-	return cmd
+	rootCmd.AddCommand(build.NewCommand(logger, streams))
+	rootCmd.AddCommand(get.NewCommand(logger, streams))
+	rootCmd.AddCommand(list.NewCommand(logger, streams))
+	rootCmd.AddCommand(rm.NewCommand(logger, streams))
+	rootCmd.AddCommand(set.NewCommand(logger, streams))
+	rootCmd.AddCommand(start.NewCommand(logger, streams))
+	rootCmd.AddCommand(stop.NewCommand(logger, streams))
+	rootCmd.AddCommand(version.NewCommand(logger, streams))
+
+	return rootCmd
 }

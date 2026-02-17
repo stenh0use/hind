@@ -7,59 +7,50 @@ import (
 
 	"github.com/apex/log"
 	"github.com/spf13/cobra"
+
 	"github.com/stenh0use/hind/pkg/cluster"
+	"github.com/stenh0use/hind/pkg/cmd"
 )
 
 // DefaultStartTimeout is the default timeout for starting a cluster
 const DefaultStartTimeout = 5 * time.Minute
 
-// NewCommand creates the cluster start command
-func NewCommand(logger *log.Logger) *cobra.Command {
-	var (
-		hindVersion string
-		timeout     time.Duration
-		clients     int
-		verbose     bool
-	)
-
-	cmd := &cobra.Command{
-		Use:   "start [cluster-name]",
-		Short: "Start or create a hind cluster",
-		Long:  "Start or create a hind cluster",
-		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			var clusterName string
-			if len(args) > 0 {
-				clusterName = args[0]
-			}
-			return runE(cmd, cmd.Context(), logger, startConfig{
-				clusterName: clusterName,
-				hindVersion: hindVersion,
-				timeout:     timeout,
-				clients:     clients,
-				verbose:     verbose,
-			})
-		},
-	}
-
-	cmd.Flags().StringVar(&hindVersion, "version", "latest", "Hind image version to use")
-	cmd.Flags().DurationVar(&timeout, "timeout", DefaultStartTimeout, "Timeout for starting the cluster")
-	cmd.Flags().IntVar(&clients, "clients", 1, "Number of client nodes to create")
-	cmd.Flags().BoolVar(&verbose, "verbose", false, "Enable verbose output")
-
-	return cmd
-}
-
-type startConfig struct {
-	clusterName string
+// flagpole holds all flags for the start command
+type flagpole struct {
 	hindVersion string
 	timeout     time.Duration
 	clients     int
 	verbose     bool
 }
 
-func runE(cmd *cobra.Command, ctx context.Context, logger *log.Logger, cfg startConfig) error {
-	clusterName := cfg.clusterName
+// NewCommand creates the cluster start command
+func NewCommand(logger *log.Logger, streams cmd.IOStreams) *cobra.Command {
+	flags := &flagpole{}
+
+	command := &cobra.Command{
+		Use:   "start [cluster-name]",
+		Short: "Start or create a hind cluster",
+		Long:  "Start or create a hind cluster",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runE(cmd, cmd.Context(), logger, streams, flags, args)
+		},
+	}
+
+	command.Flags().StringVar(&flags.hindVersion, "version", "latest", "Hind image version to use")
+	command.Flags().DurationVar(&flags.timeout, "timeout", DefaultStartTimeout, "Timeout for starting the cluster")
+	command.Flags().IntVar(&flags.clients, "clients", 1, "Number of client nodes to create")
+	command.Flags().BoolVar(&flags.verbose, "verbose", false, "Enable verbose output")
+
+	return command
+}
+
+func runE(cmd *cobra.Command, ctx context.Context, logger *log.Logger, streams cmd.IOStreams, flags *flagpole, args []string) error {
+	// Get cluster name from args or use default
+	var clusterName string
+	if len(args) > 0 {
+		clusterName = args[0]
+	}
 
 	// If no cluster name provided, try to get active cluster, fall back to "default"
 	if clusterName == "" {
@@ -74,14 +65,14 @@ func runE(cmd *cobra.Command, ctx context.Context, logger *log.Logger, cfg start
 	}
 
 	// Set log level based on verbose flag
-	if cfg.verbose {
+	if flags.verbose {
 		logger.Level = log.DebugLevel
 		logger.Debug("Verbose mode enabled")
 		logger.Debugf("Checking for existing cluster '%s'", clusterName)
 	}
 
 	// Create context with timeout
-	startCtx, cancel := context.WithTimeout(ctx, cfg.timeout)
+	startCtx, cancel := context.WithTimeout(ctx, flags.timeout)
 	defer cancel()
 
 	// Check if Docker daemon is accessible first
@@ -98,8 +89,8 @@ func runE(cmd *cobra.Command, ctx context.Context, logger *log.Logger, cfg start
 
 	// Start the cluster first (this loads config if exists, or uses defaults for new clusters)
 	// For new clusters, we need to set client count before starting
-	if !mgr.ConfigFileExists() && cfg.clients != 1 {
-		if err := mgr.SetClientCount(startCtx, cfg.clients); err != nil {
+	if !mgr.ConfigFileExists() && flags.clients != 1 {
+		if err := mgr.SetClientCount(startCtx, flags.clients); err != nil {
 			return fmt.Errorf("failed to set client count: %w", err)
 		}
 	}
@@ -107,15 +98,15 @@ func runE(cmd *cobra.Command, ctx context.Context, logger *log.Logger, cfg start
 	// Start the cluster (handles create, resume, and idempotent cases)
 	result, err := mgr.Start(startCtx)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to start cluster %q: %w", clusterName, err)
 	}
 
 	// If --clients flag was explicitly set for existing cluster, scale it
 	if result == cluster.StartResultResumed && cmd.Flags().Changed("clients") {
 		currentClientCount := mgr.CountClientNodes()
-		if cfg.clients != currentClientCount {
-			logger.Debugf("Client count change requested: %d -> %d", currentClientCount, cfg.clients)
-			if err := mgr.Scale(startCtx, cfg.clients); err != nil {
+		if flags.clients != currentClientCount {
+			logger.Debugf("Client count change requested: %d -> %d", currentClientCount, flags.clients)
+			if err := mgr.Scale(startCtx, flags.clients); err != nil {
 				return fmt.Errorf("failed to scale cluster: %w", err)
 			}
 		}
@@ -129,7 +120,7 @@ func runE(cmd *cobra.Command, ctx context.Context, logger *log.Logger, cfg start
 
 	// Display connection information only for newly created or resumed clusters
 	if result != cluster.StartResultAlreadyRunning {
-		displayConnectionInfo(logger, clusterName)
+		displayConnectionInfo(streams, clusterName)
 	}
 	return nil
 }
@@ -149,9 +140,9 @@ func checkDockerDaemon(ctx context.Context, logger *log.Logger) error {
 }
 
 // displayConnectionInfo shows the user how to connect to the cluster services
-func displayConnectionInfo(logger *log.Logger, clusterName string) {
-	logger.Info("Connection information:")
-	logger.Info("  Nomad:  http://localhost:4646")
-	logger.Info("  Consul: http://localhost:8500")
-	logger.Info("  Vault:  http://localhost:8200")
+func displayConnectionInfo(streams cmd.IOStreams, clusterName string) {
+	fmt.Fprintln(streams.ErrOut, "Connection information:")
+	fmt.Fprintln(streams.ErrOut, "  Nomad:  http://localhost:4646")
+	fmt.Fprintln(streams.ErrOut, "  Consul: http://localhost:8500")
+	fmt.Fprintln(streams.ErrOut, "  Vault:  http://localhost:8200")
 }

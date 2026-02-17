@@ -1,11 +1,14 @@
 package build
 
 import (
+	"io"
 	"testing"
 	"time"
 
 	"github.com/apex/log"
 	"github.com/apex/log/handlers/discard"
+
+	"github.com/stenh0use/hind/pkg/cmd"
 )
 
 func TestNewCommand(t *testing.T) {
@@ -13,20 +16,24 @@ func TestNewCommand(t *testing.T) {
 		Handler: discard.New(),
 		Level:   log.ErrorLevel,
 	}
+	streams := cmd.IOStreams{
+		Out:    io.Discard,
+		ErrOut: io.Discard,
+	}
 
-	cmd := NewCommand(logger)
+	command := NewCommand(logger, streams)
 
-	if cmd == nil {
+	if command == nil {
 		t.Fatal("NewCommand() returned nil")
 	}
 
 	// Verify Use contains expected text
-	if cmd.Use == "" {
+	if command.Use == "" {
 		t.Error("Expected Use to be non-empty")
 	}
 
-	if cmd.Short != "Build container images" {
-		t.Errorf("Expected Short to be 'Build container images', got '%s'", cmd.Short)
+	if command.Short != "Build container images" {
+		t.Errorf("Expected Short to be 'Build container images', got '%s'", command.Short)
 	}
 }
 
@@ -42,11 +49,15 @@ func TestCommandFlags(t *testing.T) {
 		Handler: discard.New(),
 		Level:   log.ErrorLevel,
 	}
+	streams := cmd.IOStreams{
+		Out:    io.Discard,
+		ErrOut: io.Discard,
+	}
 
-	cmd := NewCommand(logger)
+	command := NewCommand(logger, streams)
 
 	// Check if timeout flag exists
-	timeoutFlag := cmd.Flags().Lookup("timeout")
+	timeoutFlag := command.Flags().Lookup("timeout")
 	if timeoutFlag == nil {
 		t.Fatal("Expected 'timeout' flag to exist")
 	}
@@ -60,6 +71,10 @@ func TestCommandArgs(t *testing.T) {
 	logger := &log.Logger{
 		Handler: discard.New(),
 		Level:   log.ErrorLevel,
+	}
+	streams := cmd.IOStreams{
+		Out:    io.Discard,
+		ErrOut: io.Discard,
 	}
 
 	// Test with valid number of args (exactly 1)
@@ -87,9 +102,9 @@ func TestCommandArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := NewCommand(logger)
-			cmd.SetArgs(tt.args)
-			err := cmd.Args(cmd, tt.args)
+			command := NewCommand(logger, streams)
+			command.SetArgs(tt.args)
+			err := command.Args(command, tt.args)
 			if (err != nil) != tt.wantError {
 				t.Errorf("Args validation error = %v, wantError %v", err, tt.wantError)
 			}

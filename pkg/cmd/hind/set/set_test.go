@@ -1,12 +1,15 @@
 package set
 
 import (
+	"io"
 	"os"
 	"testing"
 
 	"github.com/apex/log"
 	"github.com/apex/log/handlers/discard"
+
 	"github.com/stenh0use/hind/pkg/cluster"
+	"github.com/stenh0use/hind/pkg/cmd"
 	"github.com/stenh0use/hind/pkg/file"
 )
 
@@ -29,17 +32,21 @@ func TestSetProfileCommand(t *testing.T) {
 		t.Fatalf("Failed to create test cluster directory: %v", err)
 	}
 
-	// Create logger
+	// Create logger and streams
 	logger := &log.Logger{Handler: discard.New()}
+	streams := cmd.IOStreams{
+		Out:    io.Discard,
+		ErrOut: io.Discard,
+	}
 
 	// Create command
-	cmd := NewCommand(logger)
+	command := NewCommand(logger, streams)
 
 	// Set args
-	cmd.SetArgs([]string{"profile", testClusterName})
+	command.SetArgs([]string{"profile", testClusterName})
 
 	// Execute command
-	err = cmd.Execute()
+	err = command.Execute()
 	if err != nil {
 		t.Fatalf("Command execution failed: %v", err)
 	}
@@ -62,34 +69,42 @@ func TestSetProfileCommand_NonExistentCluster(t *testing.T) {
 	os.Setenv("HOME", tmpDir)
 	defer os.Setenv("HOME", oldHome)
 
-	// Create logger
+	// Create logger and streams
 	logger := &log.Logger{Handler: discard.New()}
+	streams := cmd.IOStreams{
+		Out:    io.Discard,
+		ErrOut: io.Discard,
+	}
 
 	// Create command
-	cmd := NewCommand(logger)
+	command := NewCommand(logger, streams)
 
 	// Set args to non-existent cluster
-	cmd.SetArgs([]string{"profile", "non-existent-cluster"})
+	command.SetArgs([]string{"profile", "non-existent-cluster"})
 
 	// Execute command - should fail
-	err := cmd.Execute()
+	err := command.Execute()
 	if err == nil {
 		t.Fatal("Expected error when setting non-existent cluster as active, got nil")
 	}
 }
 
 func TestSetProfileCommand_NoArgs(t *testing.T) {
-	// Create logger
+	// Create logger and streams
 	logger := &log.Logger{Handler: discard.New()}
+	streams := cmd.IOStreams{
+		Out:    io.Discard,
+		ErrOut: io.Discard,
+	}
 
 	// Create command
-	cmd := NewCommand(logger)
+	command := NewCommand(logger, streams)
 
 	// Set no args - should fail
-	cmd.SetArgs([]string{"profile"})
+	command.SetArgs([]string{"profile"})
 
 	// Execute command - should fail
-	err := cmd.Execute()
+	err := command.Execute()
 	if err == nil {
 		t.Fatal("Expected error when no cluster name provided, got nil")
 	}
