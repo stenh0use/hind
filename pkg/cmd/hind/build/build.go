@@ -12,6 +12,7 @@ import (
 
 	"github.com/stenh0use/hind/pkg/build/image"
 	"github.com/stenh0use/hind/pkg/build/release"
+	"github.com/stenh0use/hind/pkg/cmd"
 )
 
 const (
@@ -19,10 +20,15 @@ const (
 	DefaultBuildTimeout = 15 * time.Minute
 )
 
-func NewCommand(logger *log.Logger) *cobra.Command {
-	var timeout time.Duration
+// flagpole holds all flags for the build command
+type flagpole struct {
+	timeout time.Duration
+}
 
-	cmd := &cobra.Command{
+func NewCommand(logger *log.Logger, streams cmd.IOStreams) *cobra.Command {
+	flags := &flagpole{}
+
+	command := &cobra.Command{
 		Use:       fmt.Sprintf("build [%s]", strings.Join(image.BuildTargets(), "|")),
 		Short:     "Build container images",
 		Long:      "Build one or more hind container images. Use 'all' to build all images.",
@@ -35,17 +41,17 @@ func NewCommand(logger *log.Logger) *cobra.Command {
 		},
 
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runE(cmd.Context(), logger, timeout, args)
+			return runE(cmd.Context(), logger, streams, flags, args)
 		},
 	}
 
-	cmd.Flags().DurationVar(&timeout, "timeout", DefaultBuildTimeout, "Timeout for building a single image")
+	command.Flags().DurationVar(&flags.timeout, "timeout", DefaultBuildTimeout, "Timeout for building a single image")
 	// TODO: add cache/file cleanup/etc flags
 
-	return cmd
+	return command
 }
 
-func runE(ctx context.Context, logger *log.Logger, timeout time.Duration, args []string) error {
+func runE(ctx context.Context, logger *log.Logger, streams cmd.IOStreams, flags *flagpole, args []string) error {
 	target := args[0]
 
 	var kinds []release.ImageKind
@@ -58,18 +64,22 @@ func runE(ctx context.Context, logger *log.Logger, timeout time.Duration, args [
 
 	for _, k := range kinds {
 		// For single image build, use the specified timeout
-		buildCtx, cancel := context.WithTimeout(ctx, timeout)
+		buildCtx, cancel := context.WithTimeout(ctx, flags.timeout)
 		defer cancel()
 
-		logger.WithField("timeout", timeout).Debug("Building image with timeout")
+		logger.WithField("timeout", flags.timeout).Debug("Building image with timeout")
+		fmt.Fprintf(streams.ErrOut, "Building %s image...\n", k)
+
 		builder, err := image.NewBuilder(logger, k)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create builder for %s: %w", k, err)
 		}
 
 		if err := builder.BuildImage(buildCtx); err != nil {
-			return err
+			return fmt.Errorf("failed to build %s image: %w", k, err)
 		}
+
+		fmt.Fprintf(streams.ErrOut, "Successfully built %s image\n", k)
 	}
 
 	return nil

@@ -7,17 +7,19 @@ import (
 
 	"github.com/apex/log"
 	"github.com/spf13/cobra"
+
 	"github.com/stenh0use/hind/pkg/cluster"
+	"github.com/stenh0use/hind/pkg/cmd"
 )
 
 // DefaultDeleteTimeout is the default timeout for destroying a cluster
 const DefaultDeleteTimeout = 2 * time.Minute
 
 // NewCommand creates the cluster delete command
-func NewCommand(logger *log.Logger) *cobra.Command {
+func NewCommand(logger *log.Logger, streams cmd.IOStreams) *cobra.Command {
 	var timeout time.Duration
 
-	cmd := &cobra.Command{
+	command := &cobra.Command{
 		Use:   "rm [cluster-name]",
 		Short: "Remove a hind cluster",
 		Long:  "Remove a hind cluster and delete all its resources",
@@ -27,16 +29,16 @@ func NewCommand(logger *log.Logger) *cobra.Command {
 			if len(args) > 0 {
 				clusterName = args[0]
 			}
-			return runE(cmd.Context(), logger, timeout, clusterName)
+			return runE(cmd.Context(), logger, streams, timeout, clusterName)
 		},
 	}
 
-	cmd.Flags().DurationVar(&timeout, "timeout", DefaultDeleteTimeout, "Timeout for destroying the cluster")
+	command.Flags().DurationVar(&timeout, "timeout", DefaultDeleteTimeout, "Timeout for destroying the cluster")
 
-	return cmd
+	return command
 }
 
-func runE(ctx context.Context, logger *log.Logger, timeout time.Duration, clusterName string) error {
+func runE(ctx context.Context, logger *log.Logger, streams cmd.IOStreams, timeout time.Duration, clusterName string) error {
 	// Check if this is the active cluster (before any changes)
 	activeCluster, err := cluster.GetActiveCluster()
 	if err != nil {
@@ -74,6 +76,6 @@ func runE(ctx context.Context, logger *log.Logger, timeout time.Duration, cluste
 		}
 	}
 
-	logger.Infof("cluster '%s' deleted successfully", clusterName)
+	fmt.Fprintf(streams.ErrOut, "Cluster '%s' deleted successfully\n", clusterName)
 	return nil
 }

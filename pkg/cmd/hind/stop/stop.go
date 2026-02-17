@@ -7,17 +7,19 @@ import (
 
 	"github.com/apex/log"
 	"github.com/spf13/cobra"
+
 	"github.com/stenh0use/hind/pkg/cluster"
+	"github.com/stenh0use/hind/pkg/cmd"
 )
 
 // DefaultStopTimeout is the default timeout for stopping a cluster
 const DefaultStopTimeout = 30 * time.Second
 
 // NewCommand creates the cluster stop command
-func NewCommand(logger *log.Logger) *cobra.Command {
+func NewCommand(logger *log.Logger, streams cmd.IOStreams) *cobra.Command {
 	var timeout time.Duration
 
-	cmd := &cobra.Command{
+	command := &cobra.Command{
 		Use:   "stop [cluster-name]",
 		Short: "Stop a hind cluster",
 		Long: `Stop all containers in a hind cluster without deleting configuration.
@@ -28,16 +30,16 @@ The cluster can be resumed later with 'hind start'.`,
 			if len(args) > 0 {
 				clusterName = args[0]
 			}
-			return runE(cmd.Context(), logger, timeout, clusterName)
+			return runE(cmd.Context(), logger, streams, timeout, clusterName)
 		},
 	}
 
-	cmd.Flags().DurationVar(&timeout, "timeout", DefaultStopTimeout, "Timeout for stopping the cluster")
+	command.Flags().DurationVar(&timeout, "timeout", DefaultStopTimeout, "Timeout for stopping the cluster")
 
-	return cmd
+	return command
 }
 
-func runE(ctx context.Context, logger *log.Logger, timeout time.Duration, clusterName string) error {
+func runE(ctx context.Context, logger *log.Logger, streams cmd.IOStreams, timeout time.Duration, clusterName string) error {
 	// Get active cluster (for informational purposes only)
 	activeCluster, err := cluster.GetActiveCluster()
 	if err != nil {
@@ -77,6 +79,6 @@ func runE(ctx context.Context, logger *log.Logger, timeout time.Duration, cluste
 	// Note: Unlike delete, we do NOT modify active cluster setting
 	// The stopped cluster remains the active cluster for future start commands
 
-	logger.Infof("cluster '%s' stopped successfully", clusterName)
+	fmt.Fprintf(streams.ErrOut, "Cluster '%s' stopped successfully\n", clusterName)
 	return nil
 }

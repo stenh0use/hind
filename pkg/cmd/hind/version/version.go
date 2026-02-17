@@ -7,7 +7,9 @@ import (
 
 	"github.com/apex/log"
 	"github.com/spf13/cobra"
+
 	"github.com/stenh0use/hind/pkg/build/release"
+	"github.com/stenh0use/hind/pkg/cmd"
 )
 
 // Version is the CLI version. Set at build time with -ldflags.
@@ -31,14 +33,14 @@ func DisplayVersion() string {
 }
 
 // NewCommand returns a new cobra.Command for version
-func NewCommand(logger *log.Logger) *cobra.Command {
-	cmd := &cobra.Command{
+func NewCommand(logger *log.Logger, streams cmd.IOStreams) *cobra.Command {
+	command := &cobra.Command{
 		Use:   "version",
 		Short: "Prints the hind CLI version",
 		Long:  "Prints the hind CLI version",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Fprintln(cmd.OutOrStdout(), DisplayVersion())
+			fmt.Fprintln(streams.Out, DisplayVersion())
 		},
 	}
-	return cmd
+	return command
 }

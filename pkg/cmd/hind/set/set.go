@@ -5,26 +5,28 @@ import (
 
 	"github.com/apex/log"
 	"github.com/spf13/cobra"
+
 	"github.com/stenh0use/hind/pkg/cluster"
+	"github.com/stenh0use/hind/pkg/cmd"
 )
 
 // NewCommand creates the set command with subcommands
-func NewCommand(logger *log.Logger) *cobra.Command {
-	cmd := &cobra.Command{
+func NewCommand(logger *log.Logger, streams cmd.IOStreams) *cobra.Command {
+	command := &cobra.Command{
 		Use:   "set",
 		Short: "Set hind configuration options",
 		Long:  "Set various hind configuration options like the active cluster profile",
 	}
 
 	// Add subcommands
-	cmd.AddCommand(newProfileCommand(logger))
+	command.AddCommand(newProfileCommand(logger, streams))
 
-	return cmd
+	return command
 }
 
 // newProfileCommand creates the 'set profile' subcommand
-func newProfileCommand(logger *log.Logger) *cobra.Command {
-	cmd := &cobra.Command{
+func newProfileCommand(logger *log.Logger, streams cmd.IOStreams) *cobra.Command {
+	command := &cobra.Command{
 		Use:   "profile [cluster-name]",
 		Short: "Set the active cluster profile",
 		Long:  "Set the active cluster profile to the specified cluster name",
@@ -37,10 +39,10 @@ func newProfileCommand(logger *log.Logger) *cobra.Command {
 				return fmt.Errorf("failed to set active cluster: %w", err)
 			}
 
-			logger.Infof("Active cluster profile set to '%s'", clusterName)
+			fmt.Fprintf(streams.ErrOut, "Active cluster profile set to '%s'\n", clusterName)
 			return nil
 		},
 	}
 
-	return cmd
+	return command
 }
