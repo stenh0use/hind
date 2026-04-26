@@ -17,14 +17,6 @@ ARG NOMAD_VERSION
 # This is the location of the releases.
 ENV HASHICORP_RELEASES=https://releases.hashicorp.com
 
-# all scripts are 0755 (rwx r-x r-x)
-COPY --chmod=0755 rootfs/usr/local/bin/* /usr/local/bin/
-
-# all non-scripts are 0644 (rw- r-- r--)
-COPY --chmod=0644 rootfs/etc/* /etc/
-COPY --chmod=0644 rootfs/etc/systemd/system/* /etc/systemd/system/
-COPY --chmod=0644 rootfs/etc/nomad.d/* /etc/nomad.d/
-
 # Enable systemd.
 RUN apt-get update \
     && apt-get install -y systemd systemd-sysv \
@@ -38,13 +30,8 @@ RUN apt-get update \
     && rm -rf /lib/systemd/system/sockets.target.wants/*initctl* \
     && echo "ReadKMsg=no" >> /etc/systemd/journald.conf
 
-RUN systemctl enable nomad
-
 RUN addgroup nomad \
-    && adduser --system --group nomad \
-    && mkdir -p /nomad/data \
-    && mkdir -p /etc/nomad.d \
-    && chown -R nomad:nomad /nomad /etc/nomad.d
+    && adduser --system --group nomad
 
 # Set up certificates, base tools, and Nomad.
 # libc6 is needed to symlink the shared libraries for ARM builds
@@ -79,6 +66,21 @@ RUN set -eux \
     && rm -rf /root/.gnupg \
     # tiny smoke test to ensure the binary we downloaded runs
     && nomad version
+
+RUN mkdir -p /nomad/data \
+    && mkdir -p /etc/nomad.d \
+    && chown -R nomad:nomad /nomad \
+    && chown -R nomad:nomad /etc/nomad.d
+
+# all scripts are 0755 (rwx r-x r-x)
+COPY --chmod=0755 rootfs/usr/local/bin/* /usr/local/bin/
+
+# all non-scripts are 0644 (rw- r-- r--)
+COPY --chmod=0644 rootfs/etc/* /etc/
+COPY --chmod=0644 rootfs/etc/systemd/system/* /etc/systemd/system/
+COPY --chmod=0644 rootfs/etc/nomad.d/* /etc/nomad.d/
+
+RUN systemctl enable nomad
 
 # squash down to one compressed layer, without any lingering whiteout files etc
 FROM scratch
