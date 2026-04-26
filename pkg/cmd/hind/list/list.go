@@ -13,6 +13,7 @@ import (
 	"github.com/stenh0use/hind/pkg/cmd"
 	"github.com/stenh0use/hind/pkg/config"
 	"github.com/stenh0use/hind/pkg/provider"
+	"github.com/stenh0use/hind/pkg/provider/dockercli"
 )
 
 // DefaultListTimeout is the default timeout for listing clusters
@@ -116,7 +117,7 @@ func getClusterStatus(ctx context.Context, logger *log.Logger, clusterName strin
 	defer cancel()
 
 	// Create cluster manager
-	manager, err := cluster.New(logger, clusterName)
+	manager, err := cluster.New(logger, clusterName, dockercli.New(logger))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cluster manager: %w", err)
 	}

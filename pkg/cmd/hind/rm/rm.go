@@ -10,6 +10,7 @@ import (
 
 	"github.com/stenh0use/hind/pkg/cluster"
 	"github.com/stenh0use/hind/pkg/cmd"
+	"github.com/stenh0use/hind/pkg/provider/dockercli"
 )
 
 // DefaultDeleteTimeout is the default timeout for destroying a cluster
@@ -60,7 +61,7 @@ func runE(ctx context.Context, logger *log.Logger, streams cmd.IOStreams, timeou
 	defer cancel()
 
 	// Create cluster configuration
-	clusterMgr, err := cluster.New(logger, clusterName)
+	clusterMgr, err := cluster.New(logger, clusterName, dockercli.New(logger))
 	if err != nil {
 		return fmt.Errorf("failed to create cluster manager: %w", err)
 	}

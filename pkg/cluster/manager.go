@@ -11,7 +11,6 @@ import (
 	"github.com/stenh0use/hind/pkg/config"
 	"github.com/stenh0use/hind/pkg/file"
 	"github.com/stenh0use/hind/pkg/provider"
-	"github.com/stenh0use/hind/pkg/provider/dockercli"
 )
 
 // Manager handles cluster lifecycle operations.
@@ -35,9 +34,12 @@ func (m *Manager) SetConfig(cfg *config.Cluster) {
 
 // New creates a new cluster manager with the given name and default configuration.
 // It initializes the file manager, provider, and cluster configuration for the specified cluster name.
-func New(logger *log.Logger, name string) (*Manager, error) {
+func New(logger *log.Logger, name string, client provider.Client) (*Manager, error) {
 	if err := ValidateClusterName(name); err != nil {
 		return nil, fmt.Errorf("invalid cluster name %q: %w", name, err)
+	}
+	if client == nil {
+		return nil, fmt.Errorf("provider client cannot be nil")
 	}
 
 	cfg, err := newClusterConfig(name, release.Latest().Hind)
@@ -53,7 +55,7 @@ func New(logger *log.Logger, name string) (*Manager, error) {
 
 	m := &Manager{
 		logger:     logger,
-		provider:   dockercli.New(logger),
+		provider:   client,
 		config:     cfg,
 		fm:         fm,
 		configFile: file.JoinPath(ClusterConfigDir, name, ClusterConfigFile),

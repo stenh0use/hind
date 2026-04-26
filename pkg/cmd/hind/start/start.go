@@ -10,6 +10,7 @@ import (
 
 	"github.com/stenh0use/hind/pkg/cluster"
 	"github.com/stenh0use/hind/pkg/cmd"
+	"github.com/stenh0use/hind/pkg/provider/dockercli"
 )
 
 // DefaultStartTimeout is the default timeout for starting a cluster
@@ -80,7 +81,7 @@ func runE(cmd *cobra.Command, ctx context.Context, logger *log.Logger, streams c
 	}
 
 	// Create cluster manager
-	mgr, err := cluster.New(logger, clusterName)
+	mgr, err := cluster.New(logger, clusterName, dockercli.New(logger))
 	if err != nil {
 		return fmt.Errorf("failed to create cluster manager: %w", err)
 	}
@@ -127,7 +128,7 @@ func runE(cmd *cobra.Command, ctx context.Context, logger *log.Logger, streams c
 func checkDockerDaemon(ctx context.Context, logger *log.Logger) error {
 	// Create a temporary manager to test Docker connectivity
 	// This is a lightweight check before we do any real work
-	tempMgr, err := cluster.New(logger, "temp-check")
+	tempMgr, err := cluster.New(logger, "temp-check", dockercli.New(logger))
 	if err != nil {
 		return err
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/stenh0use/hind/pkg/cluster"
 	"github.com/stenh0use/hind/pkg/cmd"
 	"github.com/stenh0use/hind/pkg/provider"
+	"github.com/stenh0use/hind/pkg/provider/dockercli"
 )
 
 // DefaultGetTimeout is the default timeout for getting a cluster
@@ -25,7 +26,7 @@ type clusterManager interface {
 type clusterManagerFactory func(logger *log.Logger, name string) (clusterManager, error)
 
 var newClusterManager clusterManagerFactory = func(logger *log.Logger, name string) (clusterManager, error) {
-	return cluster.New(logger, name)
+	return cluster.New(logger, name, dockercli.New(logger))
 }
 
 // NewCommand creates the cluster delete command
