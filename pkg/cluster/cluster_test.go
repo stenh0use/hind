@@ -207,3 +207,16 @@ func TestStartResult(t *testing.T) {
 		t.Errorf("expected 3 unique StartResult values, got %d", len(seen))
 	}
 }
+
+func TestListReturnsEmptyWhenConfigDirMissing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	clusters, err := List()
+	if err != nil {
+		t.Fatalf("List() returned error when config dir is missing: %v", err)
+	}
+
+	if len(clusters) != 0 {
+		t.Fatalf("List() expected 0 clusters on first run, got %d", len(clusters))
+	}
+}

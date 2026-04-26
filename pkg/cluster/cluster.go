@@ -6,6 +6,7 @@ package cluster
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -68,6 +69,9 @@ func List() ([]string, error) {
 	}
 	entries, err := fm.ListDir(ClusterConfigDir)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return clusters, nil
+		}
 		return nil, err
 	}
 

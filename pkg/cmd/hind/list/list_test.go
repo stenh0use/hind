@@ -1,12 +1,41 @@
 package list
 
 import (
+	"bytes"
+	"context"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/apex/log"
+	"github.com/apex/log/handlers/discard"
+
+	"github.com/stenh0use/hind/pkg/cmd"
 	"github.com/stenh0use/hind/pkg/config"
 	"github.com/stenh0use/hind/pkg/provider"
 )
+
+func TestRunE_NoClustersOnFirstRunWhenConfigDirMissing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	logger := &log.Logger{Handler: discard.New(), Level: log.ErrorLevel}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	streams := cmd.IOStreams{In: strings.NewReader(""), Out: &stdout, ErrOut: &stderr}
+
+	err := runE(context.Background(), logger, streams, DefaultListTimeout)
+	if err != nil {
+		t.Fatalf("runE() returned error on first-run missing config dir: %v", err)
+	}
+
+	if got := stderr.String(); !strings.Contains(got, "No clusters found") {
+		t.Fatalf("expected empty-state output in stderr, got %q", got)
+	}
+
+	if got := stdout.String(); got != "" {
+		t.Fatalf("expected no stdout table output, got %q", got)
+	}
+}
 
 func TestAggregateClusterStatus_AllRunning(t *testing.T) {
 	info := &provider.ClusterInfo{
