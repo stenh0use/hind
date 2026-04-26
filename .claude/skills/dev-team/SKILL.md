@@ -82,7 +82,15 @@ Initial file content:
 - Run roles in parallel only when work is independent.
 - Do not spawn more than 5 subagents at once.
 - Do not close an agent before its deliverable and handoff are complete.
-- Approve all agent escalations that you deem to be safe and within the scope of the task
+- Approve all agent escalations that you deem to be safe and within the scope of the task.
+
+### Worktree Base Rules (required)
+
+- Before creating any new subagent worktree, commit relevant root-branch changes in the main workspace so subagents start from an up-to-date, mergeable baseline.
+- Create subagent worktrees from the current working branch tip (for example `refactor-cleanup`), not from `main`, unless the user explicitly requests otherwise.
+- Before staff/QA review gates or integration, rebase each active subagent worktree branch onto the current working branch `HEAD`.
+- If the current working branch advances while subagents are active, rebase those active worktree branches again before final validation.
+- Treat branch-base alignment as a required gate: do not mark work as ready to merge until worktree branches are confirmed rebased on the current branch.
 
 ## Required Review Gates
 
