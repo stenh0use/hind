@@ -130,3 +130,16 @@ This file contains evidence and supporting context for backlog items in `.claude
   - Reconcile flow: `pkg/cluster/reconcile.go`
 - Notes:
   - Preserve these patterns while addressing defects and modularity changes.
+
+## R-026: `hind build` "path must be relative" error (BUG-009)
+- Source reviews:
+  - Bug entry: BUG-009 (`.claude/team/hind/bugs.md#bug-009`)
+- **Root cause**: `pkg/build/image/files/files.go:42` sets `i.buildDir` to an absolute path via `file.JoinPath(homeDir, buildBaseDir, buildSubDir, i.name)` where `homeDir` comes from `os.UserHomeDir()` (returns absolute). When `WriteFiles()` calls `i.manager.EnsureDir(i.buildDir)` at line 68, it passes this absolute path to `EnsureDir` which now rejects it (BL-002 added `validatePath` that calls `filepath.IsAbs` and returns error).
+- Evidence:
+  - Root issue: `pkg/build/image/files/files.go:42` — `i.buildDir = file.JoinPath(homeDir, buildBaseDir, buildSubDir, i.name)` produces absolute path
+  - Call site: `pkg/build/image/files/files.go:68` — `i.manager.EnsureDir(i.buildDir)` passes absolute path
+  - Validation: `pkg/file/file.go:328-329` — `if filepath.IsAbs(trimmed) { return errors.New("path must be relative") }`
+- Fix approach: Pass relative path to EnsureDir instead of absolute, OR use `Manager` root directly without re-validating pre-constructed paths.
+- Notes:
+  - This was a latent bug—BL-002's stricter validation exposed it.
+  - HIGH severity: `hind build` completely broken for all targets.

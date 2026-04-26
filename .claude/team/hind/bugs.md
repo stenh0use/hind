@@ -79,3 +79,12 @@
 - Status: open
 - Linked work item: BL-007
 
+## BUG-009
+- Description: `hind build all` returns an error "path must be relative" introduced by change BL-002 (severity: high)
+- Repor steps or triggering condition:
+  1. run `make build`
+  2. run any hind build target eg. `hind build consul`
+- Observed result: ERROR[0000] command failed            error=failed to build consul image: failed to write build files for consul: failed to create build dir: invalid path for EnsureDir: path must be relative
+- Expected result: command should template out the build files and then build the container image(s)
+- Status: open
+- Linked work item: BL-013

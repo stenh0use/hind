@@ -36,6 +36,16 @@ Reference index: `.claude/team/refs.md`
 - **Expected outcome**: reject traversal/absolute escapes for user-controlled names; root-constrained resolution.
 - **References**: [R-002](./refs.md#r-002-path-traversal--root-escape-in-file-manager-and-cluster-name-inputs)
 
+### BL-013 — Fix `hind build` "path must be relative" error (BUG-009)
+- **Priority**: P0
+- **Size**: S
+- **Source**: QA
+- **Maps to QA bugs**: BUG-009
+- **Problem**: `hind build <target>` fails with "path must be relative" because WriteFiles passes absolute `buildDir` to EnsureDir which now rejects absolute paths (latent bug exposed by BL-002's stricter validation).
+- **Why now**: HIGH severity, `hind build` completely broken.
+- **Expected outcome**: `hind build <target>` templates and builds images successfully.
+- **References**: [BUG-009](./hind/bugs.md#bug-009); [Root cause](./refs.md#r-026)
+
 ---
 
 ## P1 — High-value correctness and contract fixes
@@ -155,6 +165,8 @@ Reference index: `.claude/team/refs.md`
 - BUG-005 → BL-007
 - BUG-006 → BL-008
 - BUG-007 → BL-002
+- BUG-009 → BL-013
+- BUG-009 → BL-013
 
 Source of bug details: `.claude/team/hind/bugs.md`
 

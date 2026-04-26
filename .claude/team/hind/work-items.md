@@ -19,6 +19,7 @@
 | BL-014 | Extract client node factory function to eliminate drift and fix numbering collision bug | unassigned | Todo | None |
 | BL-015 | Populate or remove unused ContainerInfo fields (Ports, Network, Address, Image) | unassigned | Todo | BL-004, BL-006, BL-007 |
 | BL-016 | Remove or complete dead CNI sub-package (pkg/cluster/cni) | unassigned | Todo | None |
+| BL-026 | Fix `hind build` "path must be relative" error (BUG-009) | unassigned | Todo | None |
 | BL-017 | Define provider.ContainerSpec to decouple dockercli from config.Node | unassigned | Todo | BL-013 |
 | BL-018 | Move provider.ClusterInfo to pkg/cluster to clean layer boundary | unassigned | Todo | BL-015 |
 | BL-019 | Fix minor correctness issues: unused ctx, wrong error text, Ports double-assign, bad image fallback, timer leak | unassigned | Todo | None |
