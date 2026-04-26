@@ -121,13 +121,6 @@ func newClusterConfig(name string, version string) (*config.Cluster, error) {
 				Name: release.Vault.ImageName(),
 				Tag:  v.Hind,
 			},
-			Ports: []config.PortMapping{
-				{
-					HostPort:      8200,
-					ContainerPort: 8200,
-					Protocol:      "tcp",
-				},
-			},
 			Environment: map[string]string{
 				"CONSUL_AGENT_MODE":     "client",
 				"CONSUL_SERVER_ADDRESS": fmt.Sprintf("hind.%s.consul.%.2d", name, 1),

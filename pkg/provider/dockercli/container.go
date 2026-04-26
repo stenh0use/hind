@@ -61,7 +61,7 @@ func (c *Client) CreateContainer(ctx context.Context, cfg config.Node) (string, 
 	} else if cfg.Image.Tag != "" {
 		imgRef = fmt.Sprintf("%s:%s", cfg.Image.Name, cfg.Image.Tag)
 	} else {
-		imgRef = cfg.Name
+		imgRef = cfg.Image.Name
 	}
 	// add container name
 	if cfg.Name != "" {

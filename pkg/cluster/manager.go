@@ -129,11 +129,14 @@ func (m *Manager) waitForContainersRunning(ctx context.Context, timeout time.Dur
 			return nil
 		}
 
-		// Check if context is done
+		timer := time.NewTimer(DefaultContainerPollInterval)
 		select {
 		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
 			return ctx.Err()
-		case <-time.After(DefaultContainerPollInterval):
+		case <-timer.C:
 			// Continue waiting
 		}
 	}
