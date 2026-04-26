@@ -17,10 +17,9 @@ const DefaultStartTimeout = 5 * time.Minute
 
 // flagpole holds all flags for the start command
 type flagpole struct {
-	hindVersion string
-	timeout     time.Duration
-	clients     int
-	verbose     bool
+	timeout time.Duration
+	clients int
+	verbose bool
 }
 
 // NewCommand creates the cluster start command
@@ -37,7 +36,6 @@ func NewCommand(logger *log.Logger, streams cmd.IOStreams) *cobra.Command {
 		},
 	}
 
-	command.Flags().StringVar(&flags.hindVersion, "version", "latest", "Hind image version to use")
 	command.Flags().DurationVar(&flags.timeout, "timeout", DefaultStartTimeout, "Timeout for starting the cluster")
 	command.Flags().IntVar(&flags.clients, "clients", 1, "Number of client nodes to create")
 	command.Flags().BoolVar(&flags.verbose, "verbose", false, "Enable verbose output")
