@@ -284,6 +284,25 @@ func TestAggregateClusterStatus_OldestCreationTime(t *testing.T) {
 	}
 }
 
+func TestAggregateClusterStatus_ExitedMappedToStopped(t *testing.T) {
+	info := &provider.ClusterInfo{
+		Containers: []provider.ContainerInfo{
+			{Name: "node1", Status: "exited", Created: time.Now().Format(time.RFC3339)},
+			{Name: "node2", Status: "exited", Created: time.Now().Format(time.RFC3339)},
+		},
+	}
+
+	cfg := &config.Cluster{
+		Nodes: []config.Node{{}, {}},
+	}
+
+	result := aggregateClusterStatus(info, cfg)
+
+	if result.Status != "stopped" {
+		t.Errorf("Expected status 'stopped' for exited containers, got '%s'", result.Status)
+	}
+}
+
 func TestAggregateClusterStatus_InvalidCreationTime(t *testing.T) {
 	info := &provider.ClusterInfo{
 		Containers: []provider.ContainerInfo{
