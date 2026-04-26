@@ -36,6 +36,10 @@ func (m *Manager) SetConfig(cfg *config.Cluster) {
 // New creates a new cluster manager with the given name and default configuration.
 // It initializes the file manager, provider, and cluster configuration for the specified cluster name.
 func New(logger *log.Logger, name string) (*Manager, error) {
+	if err := ValidateClusterName(name); err != nil {
+		return nil, fmt.Errorf("invalid cluster name %q: %w", name, err)
+	}
+
 	cfg, err := newClusterConfig(name, release.Latest().Hind)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create default cluster config for '%s': %w", name, err)
@@ -52,7 +56,7 @@ func New(logger *log.Logger, name string) (*Manager, error) {
 		provider:   dockercli.New(logger),
 		config:     cfg,
 		fm:         fm,
-		configFile: file.JoinPath(fm.GetRootDir(), ClusterConfigDir, name, ClusterConfigFile),
+		configFile: file.JoinPath(ClusterConfigDir, name, ClusterConfigFile),
 	}
 	return m, nil
 }
@@ -79,7 +83,7 @@ func (m *Manager) Start(ctx context.Context) (StartResult, error) {
 	} else {
 		// Use the config created by New() - it already has defaults
 		// Just ensure the directory exists
-		clusterDir := file.JoinPath(m.fm.GetRootDir(), ClusterConfigDir, m.config.Name)
+		clusterDir := file.JoinPath(ClusterConfigDir, m.config.Name)
 		if err := m.fm.EnsureDir(clusterDir); err != nil {
 			return StartResultCreated, fmt.Errorf("failed to create cluster dir: %w", err)
 		}

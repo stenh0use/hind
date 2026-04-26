@@ -36,7 +36,7 @@ func NewFromHomeDir(paths ...string) (*Manager, error) {
 // New creates a new file manager for the specified root directory
 func New(rootDir string) (*Manager, error) {
 	// Validate rootDir
-	if err := validatePath(rootDir); err != nil {
+	if err := validateRootPath(rootDir); err != nil {
 		return nil, fmt.Errorf("invalid path for rootDir: %w", err)
 	}
 
@@ -60,7 +60,11 @@ func (f *Manager) EnsureDir(path string) error {
 		return fmt.Errorf("invalid path for EnsureDir: %w", err)
 	}
 
-	fullPath := f.resolvePath(path)
+	fullPath, err := f.resolvePath(path)
+	if err != nil {
+		return fmt.Errorf("invalid path for EnsureDir: %w", err)
+	}
+
 	if err := os.MkdirAll(fullPath, dirPermissions); err != nil {
 		return fmt.Errorf("failed to create directory %s: %w", fullPath, err)
 	}
@@ -73,7 +77,11 @@ func (f *Manager) RemoveDir(path string) error {
 		return fmt.Errorf("invalid path for RemoveDir: %w", err)
 	}
 
-	fullPath := f.resolvePath(path)
+	fullPath, err := f.resolvePath(path)
+	if err != nil {
+		return fmt.Errorf("invalid path for RemoveDir: %w", err)
+	}
+
 	if err := os.RemoveAll(fullPath); err != nil {
 		return fmt.Errorf("failed to remove directory %s: %w", fullPath, err)
 	}
@@ -86,7 +94,11 @@ func (f *Manager) DirExists(path string) bool {
 		return false
 	}
 
-	fullPath := f.resolvePath(path)
+	fullPath, err := f.resolvePath(path)
+	if err != nil {
+		return false
+	}
+
 	info, err := os.Stat(fullPath)
 	if err != nil {
 		return false
@@ -100,7 +112,11 @@ func (f *Manager) ListDir(path string) ([]os.DirEntry, error) {
 		return nil, fmt.Errorf("invalid path for ListDir: %w", err)
 	}
 
-	fullPath := f.resolvePath(path)
+	fullPath, err := f.resolvePath(path)
+	if err != nil {
+		return nil, fmt.Errorf("invalid path for ListDir: %w", err)
+	}
+
 	entries, err := os.ReadDir(fullPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read directory %s: %w", fullPath, err)
@@ -120,7 +136,10 @@ func (f *Manager) WriteFile(path string, data []byte) error {
 		return errors.New("data cannot be nil")
 	}
 
-	fullPath := f.resolvePath(path)
+	fullPath, err := f.resolvePath(path)
+	if err != nil {
+		return fmt.Errorf("invalid path for WriteFile: %w", err)
+	}
 
 	// Ensure parent directory exists
 	parentDir := filepath.Dir(fullPath)
@@ -140,7 +159,11 @@ func (f *Manager) ReadFile(path string) ([]byte, error) {
 		return nil, fmt.Errorf("invalid path for ReadFile: %w", err)
 	}
 
-	fullPath := f.resolvePath(path)
+	fullPath, err := f.resolvePath(path)
+	if err != nil {
+		return nil, fmt.Errorf("invalid path for ReadFile: %w", err)
+	}
+
 	data, err := os.ReadFile(fullPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file %s: %w", fullPath, err)
@@ -154,7 +177,11 @@ func (f *Manager) FileExists(path string) bool {
 		return false
 	}
 
-	fullPath := f.resolvePath(path)
+	fullPath, err := f.resolvePath(path)
+	if err != nil {
+		return false
+	}
+
 	info, err := os.Stat(fullPath)
 	if err != nil {
 		return false
@@ -171,8 +198,15 @@ func (f *Manager) CopyFile(src, dst string) error {
 		return fmt.Errorf("invalid destination path for CopyFile: %w", err)
 	}
 
-	srcPath := f.resolvePath(src)
-	dstPath := f.resolvePath(dst)
+	srcPath, err := f.resolvePath(src)
+	if err != nil {
+		return fmt.Errorf("invalid source path for CopyFile: %w", err)
+	}
+
+	dstPath, err := f.resolvePath(dst)
+	if err != nil {
+		return fmt.Errorf("invalid destination path for CopyFile: %w", err)
+	}
 
 	// Open source file
 	srcFile, err := os.Open(srcPath)
@@ -213,7 +247,11 @@ func (f *Manager) RemoveFile(path string) error {
 		return fmt.Errorf("invalid path for RemoveFile: %w", err)
 	}
 
-	fullPath := f.resolvePath(path)
+	fullPath, err := f.resolvePath(path)
+	if err != nil {
+		return fmt.Errorf("invalid path for RemoveFile: %w", err)
+	}
+
 	if err := os.Remove(fullPath); err != nil {
 		return fmt.Errorf("failed to remove file %s: %w", fullPath, err)
 	}
@@ -227,7 +265,13 @@ func (f *Manager) GetPath(path string) string {
 	if err := validatePath(path); err != nil {
 		return ""
 	}
-	return f.resolvePath(path)
+
+	fullPath, err := f.resolvePath(path)
+	if err != nil {
+		return ""
+	}
+
+	return fullPath
 }
 
 // GetRootDir returns the root directory
@@ -241,30 +285,68 @@ func (f *Manager) Exists(path string) bool {
 		return false
 	}
 
-	fullPath := f.resolvePath(path)
-	_, err := os.Stat(fullPath)
+	fullPath, err := f.resolvePath(path)
+	if err != nil {
+		return false
+	}
+
+	_, err = os.Stat(fullPath)
 	return err == nil
 }
 
-// resolvePath resolves a path relative to the root directory
-func (f *Manager) resolvePath(path string) string {
-	if filepath.IsAbs(path) {
-		return filepath.Clean(path)
+// resolvePath resolves a path relative to the root directory and ensures confinement.
+func (f *Manager) resolvePath(path string) (string, error) {
+	fullPath := filepath.Clean(filepath.Join(f.rootDir, path))
+
+	relPath, err := filepath.Rel(f.rootDir, fullPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to evaluate relative path: %w", err)
 	}
-	return JoinPath(f.rootDir, path)
+
+	if relPath == ".." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) {
+		return "", errors.New("path escapes root directory")
+	}
+
+	return fullPath, nil
 }
 
 func JoinPath(paths ...string) string {
 	return filepath.Clean(filepath.Join(paths...))
 }
 
-// validatePath validates that a path is not empty and is relative
+// validatePath validates that a path is not empty, not absolute, and does not include traversal segments.
 func validatePath(path string) error {
 	if path == "" {
 		return errors.New("path cannot be empty")
 	}
 
-	// Trim whitespace and check again
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return errors.New("path cannot be empty or whitespace")
+	}
+
+	if filepath.IsAbs(trimmed) {
+		return errors.New("path must be relative")
+	}
+
+	segments := strings.FieldsFunc(trimmed, func(r rune) bool {
+		return r == '/' || r == '\\'
+	})
+	for _, segment := range segments {
+		if segment == ".." {
+			return errors.New("path cannot contain traversal segments")
+		}
+	}
+
+	return nil
+}
+
+// validateRootPath validates root path input for manager creation.
+func validateRootPath(path string) error {
+	if path == "" {
+		return errors.New("path cannot be empty")
+	}
+
 	trimmed := strings.TrimSpace(path)
 	if trimmed == "" {
 		return errors.New("path cannot be empty or whitespace")
