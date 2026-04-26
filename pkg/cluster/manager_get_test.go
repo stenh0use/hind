@@ -141,7 +141,7 @@ func TestManagerGet_ReturnsInspectContainerError(t *testing.T) {
 		config: &config.Cluster{
 			Name:    "demo",
 			Network: config.Network{Name: "hind.demo"},
-			Nodes: []config.Node{{Name: "hind.demo.consul.01"}},
+			Nodes:   []config.Node{{Name: "hind.demo.consul.01"}},
 		},
 	}
 
