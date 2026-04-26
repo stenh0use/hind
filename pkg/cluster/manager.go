@@ -249,7 +249,9 @@ func (m *Manager) Get(ctx context.Context) (*provider.ClusterInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect network: %w", err)
 	}
-	state.Network = *networkInfo
+	if networkInfo != nil {
+		state.Network = *networkInfo
+	}
 
 	containerInfos := []provider.ContainerInfo{}
 	for _, node := range m.config.Nodes {
