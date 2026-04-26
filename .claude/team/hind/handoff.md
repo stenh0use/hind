@@ -463,3 +463,300 @@ All use errors.Is to verify the sentinel error is properly wrapped through the c
 - Inspect errors in stop flow are propagated, not swallowed
 - Inspect errors in delete flow are propagated, not swallowed
 - All existing tests pass
+
+## Team Lead Orchestration (2026-04-26 15:58)
+- Mode: Claude team workflow active (`/dev-team hind`).
+- Operator status: user away; team-lead authorized to triage requests/escalations and approve in-scope asks.
+- Next wave queued from reboot-handoff unblocked items: BL-019, BL-016, BL-013, BL-010.
+- Execution policy: engineer implementation -> staff architecture/code review -> QA validation before closure.
+
+
+## Engineer Handoff (2026-04-26) — BL-013
+1. What was built and why
+   - Refactored `cluster.New` to require an injected `provider.Client` so manager construction no longer hardcodes the Docker implementation.
+   - Updated command-layer callsites to pass `dockercli.New(logger)` explicitly, preserving current runtime behavior while opening a clean DI seam for follow-on items (BL-017/BL-020/BL-025).
+   - Added constructor-focused tests that prove injected providers are used and nil providers are rejected.
+2. Files changed
+   - `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a5d22422aa53168fd/pkg/cluster/manager.go`
+   - `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a5d22422aa53168fd/pkg/cluster/manager_new_test.go`
+   - `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a5d22422aa53168fd/pkg/cmd/hind/start/start.go`
+   - `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a5d22422aa53168fd/pkg/cmd/hind/get/get.go`
+   - `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a5d22422aa53168fd/pkg/cmd/hind/list/list.go`
+   - `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a5d22422aa53168fd/pkg/cmd/hind/stop/stop.go`
+   - `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a5d22422aa53168fd/pkg/cmd/hind/rm/rm.go`
+3. Verification run and outcomes
+   - RED check: `go test ./pkg/cluster -run 'TestNewUsesInjectedProvider|TestNewReturnsErrorWhenProviderIsNil' -count=1` (before refactor) -> fail with constructor signature mismatch (`too many arguments in call to New`).
+   - Focused GREEN check: `go test ./pkg/cluster -run 'TestNewUsesInjectedProvider|TestNewReturnsErrorWhenProviderIsNil' -count=1` -> pass.
+   - `go test ./... -count=1` -> pass.
+   - `make test` -> pass.
+   - `go vet ./...` -> pass.
+   - `go test -race ./... -count=1` -> pass.
+4. Tradeoffs / uncertainties
+   - Kept BL-013 scoped to constructor wiring only; no provider surface redesign or shared factory abstraction was introduced in command packages.
+   - Each command currently constructs its own Docker client inline at callsite; this is intentionally minimal and can be centralized in follow-up refactors if desired.
+5. Explicit review request
+   - Requesting staff-engineer review for BL-013 constructor DI seam, boundary preservation (cluster vs provider responsibilities), and readiness to unblock BL-017/BL-020/BL-025.
+   - QA handoff request after staff approval: verify constructor-injection behavior via new tests and run smoke validation of `hind start/get/list/stop/rm` command creation paths.
+
+## Engineer Handoff (2026-04-26) — BL-019
+1. What was built and why
+   - Fixed five minor correctness issues scoped to BL-019:
+     - Removed an unused `ctx` parameter from `calculateReconcilePlan(...)` and updated callers/tests.
+     - Corrected `ListNetworks` failure text from "failed to inspect network" to "failed to list networks".
+     - Removed duplicate/overwritten Vault `Ports` assignment in default cluster config construction.
+     - Fixed Docker create fallback image reference to use `cfg.Image.Name` (not container name) when no tag/digest is provided.
+     - Replaced `time.After(...)` polling branch in `waitForContainersRunning` with `time.NewTimer(...)` and explicit stop/drain handling to avoid timer retention in looped polling.
+   - Added focused regression tests for image fallback, network list error wording, context-cancel polling path, and Vault port assignment behavior.
+2. Files changed
+   - `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481/pkg/cluster/manager.go`
+   - `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481/pkg/cluster/reconcile.go`
+   - `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481/pkg/cluster/reconcile_test.go`
+   - `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481/pkg/cluster/types.go`
+   - `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481/pkg/cluster/manager_wait_test.go`
+   - `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481/pkg/cluster/types_test.go`
+   - `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481/pkg/provider/dockercli/container.go`
+   - `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481/pkg/provider/dockercli/network.go`
+   - `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481/pkg/provider/dockercli/container_test.go`
+   - `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481/pkg/provider/dockercli/network_test.go`
+3. Verification run and outcomes
+   - `go -C /Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481 test ./... -count=1` → pass
+   - `go -C /Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481 vet ./...` → pass
+   - `make -C /Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481 test` → pass
+4. Tradeoffs / uncertainties
+   - Timer fix is implemented at the polling loop site and validated via prompt cancellation behavior; no additional profiling/benchmark instrumentation was added in this scoped patch.
+   - `calculateReconcilePlan` context removal is intentionally minimal and internal (unexported), with no functional behavior change.
+5. Explicit review request
+   - Requesting staff-engineer review of BL-019 for correctness scope adherence (all five minor fixes), low-risk behavior preservation, and sufficiency of focused regression coverage before QA handoff.
+
+## Staff Engineer Review (2026-04-26) — BL-016
+- Worktree reviewed: `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074`
+- Commit reviewed: `d9a75bf149ac931f26f1cf57bc5a5b30520b69a9`
+- Verdict: **approved**
+
+### Rationale against BL-016 acceptance criteria
+1. Dead CNI package removed.
+   - `pkg/cluster/cni` implementation files are deleted (`cni.go`, `cilium/cilium.go`, `factory/factory.go`, `none/none.go`).
+2. No runtime/code references remain.
+   - Repository search outside `.claude` found no remaining references to `pkg/cluster/cni`, `CNIType`, `NewDefaultFactory`, `NoneCNI`, or `CiliumCNI`.
+3. Documentation updated to match runtime architecture.
+   - `AGENTS.md` no longer advertises `pkg/cluster/cni` as an active networking surface.
+4. Regression safety maintained.
+   - Full suite verification passed (`go test ./...`, `make test`) in the review worktree.
+
+### Risks, gaps, and follow-up
+- Low risk: if future CNI support is needed, reintroduce it only with end-to-end wiring through cluster/provider layers and behavior tests, not as dormant scaffolding.
+- Note: commit includes a `.claude/team/hind/handoff.md` addition in that worktree; acceptable for team workflow but should remain intentional in integration flow.
+
+### Verification commands run
+- `git -C "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074" show --stat --name-status d9a75bf149ac931f26f1cf57bc5a5b30520b69a9`
+- `git -C "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074" show d9a75bf149ac931f26f1cf57bc5a5b30520b69a9`
+- `ls "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074/pkg/cluster"`
+- `rg -n --hidden --glob '!**/.git/**' 'pkg/cluster/cni|CNIType|NewDefaultFactory|NoneCNI|CiliumCNI' "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074"`
+- `rg -n --hidden --glob '!**/.git/**' --glob '!**/.claude/**' 'pkg/cluster/cni|CNIType|NewDefaultFactory|NoneCNI|CiliumCNI' "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074"`
+- `go -C "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074" test ./...`
+- `make -C "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074" test`
+
+
+## Staff Engineer Review (2026-04-26) — BL-013
+- Worktree reviewed: `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a5d22422aa53168fd`
+- Commit reviewed: `ee94b075dfd17f13d0024beacc2087fae001e0ed`
+- Verdict: **approved**
+
+### Rationale against BL-013 acceptance criteria and architecture boundaries
+1. `cluster.New` now requires explicit `provider.Client` injection and no longer hardcodes `dockercli.New`.
+   - Evidence: `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a5d22422aa53168fd/pkg/cluster/manager.go` (`func New(logger *log.Logger, name string, client provider.Client)`).
+2. Command callsites were updated to inject provider explicitly.
+   - Evidence in `/pkg/cmd/hind/{start,get,list,stop,rm}` all pass `dockercli.New(logger)` into `cluster.New(...)`.
+3. Constructor tests cover DI seam and nil-provider behavior.
+   - Evidence: `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a5d22422aa53168fd/pkg/cluster/manager_new_test.go`:
+     - `TestNewUsesInjectedProvider` verifies `manager.Provider()` equals injected stub.
+     - `TestNewReturnsErrorWhenProviderIsNil` verifies error return and nil manager.
+4. Boundary check: cluster package depends on `provider.Client` interface only; Docker implementation remains at CLI composition boundary, preserving dependency inversion and enabling alternate providers.
+
+### Risks, gaps, and follow-ups
+- Low risk / follow-up: `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a5d22422aa53168fd/pkg/cmd/AGENTS.md` still contains an outdated `cluster.New(logger, clusterName)` example. This is documentation drift only (non-blocking), but should be updated in a docs-cleanup pass.
+
+### Verification commands run
+- `git -C "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a5d22422aa53168fd" rev-parse HEAD`
+- `git -C "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a5d22422aa53168fd" show --stat --oneline ee94b075dfd17f13d0024beacc2087fae001e0ed`
+- `git -C "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a5d22422aa53168fd" show ee94b075dfd17f13d0024beacc2087fae001e0ed --`
+- `rg "cluster\.New\(" "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a5d22422aa53168fd"`
+- `rg "dockercli\.New" "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a5d22422aa53168fd/pkg/cluster"`
+- `go -C "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a5d22422aa53168fd" test ./pkg/cluster`
+- `go -C "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a5d22422aa53168fd" test ./pkg/cmd/hind/start ./pkg/cmd/hind/get ./pkg/cmd/hind/list ./pkg/cmd/hind/stop ./pkg/cmd/hind/rm`
+- `go -C "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a5d22422aa53168fd" test ./... -count=1`
+
+### Next action
+- Team lead may hand off BL-013 to QA for final validation and closure.
+
+## Staff Engineer Review (2026-04-26) — BL-019
+- Worktree reviewed: `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481`
+- Commit reviewed: `7f6ff7368898a4b35191871b80fc625caecefb57`
+- Verdict: **approved**
+
+### Rationale against BL-019 acceptance criteria and boundary safety
+1. Timer polling correctness fix is in place and behaviorally covered.
+   - `waitForContainersRunning` now uses `time.NewTimer(DefaultContainerPollInterval)` with explicit stop/drain on context cancellation, replacing looped `time.After` usage.
+   - Regression test `TestWaitForContainersRunning_ReturnsContextErrorPromptly` validates immediate cancel-path return.
+2. Reconcile API cleanup completed.
+   - Unused `ctx` parameter removed from `calculateReconcilePlan(...)` and all callers/tests updated; no functional drift in plan computation logic.
+3. Error text correctness fixed.
+   - `ListNetworks` now returns `failed to list networks` on command failure (replacing incorrect inspect wording), with targeted test coverage.
+4. Vault port double-assignment corrected.
+   - Default vault node port mapping is now assigned once (first instance only), with regression assertion in `TestNewClusterConfig_VaultPortsAssignedOnce`.
+5. Docker image fallback fixed.
+   - Container create fallback image reference now uses `cfg.Image.Name` (not container name) when tag/digest are unset; verified by focused dockercli test.
+
+Boundary assessment:
+- Layering remains clean (`pkg/cluster` continues to depend on `provider.Client` interface; docker-specific behavior stays in `pkg/provider/dockercli`).
+- Scope is tightly limited to correctness fixes with no new cross-package coupling.
+
+### Risks, gaps, and follow-ups
+- Residual risk is low. Timer fix is validated through cancel-path behavior rather than profiling; acceptable for BL-019 scope.
+- No blocking gaps identified for this work item.
+
+### Verification commands run
+- `git -C "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481" show --stat --oneline 7f6ff7368898a4b35191871b80fc625caecefb57`
+- `git -C "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481" show 7f6ff7368898a4b35191871b80fc625caecefb57`
+- `go -C "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481" test ./pkg/cluster -count=1`
+- `go -C "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481" test ./pkg/provider/dockercli -count=1`
+- `go -C "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481" test ./... -count=1`
+- `make -C "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481" test`
+
+## QA Engineer Review (2026-04-26) — BL-016
+- Worktree: `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074`
+- Engineer commit reviewed: `d9a75bf149ac931f26f1cf57bc5a5b30520b69a9`
+- Verdict: **FAIL**
+
+### Acceptance checks
+1) Confirm `pkg/cluster/cni` dead package removal is complete for this change.
+- Pass. `pkg/cluster/cni` directory is absent in the engineer worktree (`missing`), and commit deletes:
+  - `pkg/cluster/cni/cni.go`
+  - `pkg/cluster/cni/cilium/cilium.go`
+  - `pkg/cluster/cni/factory/factory.go`
+  - `pkg/cluster/cni/none/none.go`
+
+2) Confirm no remaining references in active code paths/docs that would break runtime assumptions.
+- Fail. Non-`.claude` code search for deleted package/symbol references is clean, but docs still prescribe an unsupported runtime path:
+  - `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074/docs/cilium.md` instructs `./bin/hind start --cni=cilium`
+  - Actual CLI behavior: `go ... run ./cmd/hind start --cni=cilium` returns `unknown flag: --cni`
+- Defect logged: `BUG-010` in `/Users/james/dev/github/stenh0use/hind/.claude/team/hind/bugs.md`.
+
+3) Run focused/full verification as appropriate (`go test ./... -count=1`, `make test`), and report outcomes.
+- `go -C /Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074 test ./... -count=1` → pass.
+- `make -C /Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074 test` → pass.
+
+4) Identify regressions or defects.
+- New defect confirmed: `BUG-010` (docs/runtime mismatch on CNI command path).
+
+### Evidence commands/output summary
+- `git -C "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074" show --name-status --oneline d9a75bf149ac931f26f1cf57bc5a5b30520b69a9`
+  - Shows deletion of all `pkg/cluster/cni/*` files and AGENTS update.
+- `if [ -d "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074/pkg/cluster/cni" ]; then echo "exists"; else echo "missing"; fi`
+  - Output: `missing`.
+- `rg -n --hidden --glob '!**/.git/**' --glob '!**/.claude/**' 'pkg/cluster/cni|cluster/cni|CNIType|NewDefaultFactory|NoneCNI|CiliumCNI' "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074"`
+  - Output: no matches.
+- `go -C "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074" run ./cmd/hind start --help`
+  - Output flags include `--clients`, `--timeout`, `--verbose`, `--version`; no `--cni` flag.
+- `go -C "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074" run ./cmd/hind start --cni=cilium`
+  - Output: `ERROR ... unknown flag: --cni` (exit 1).
+- `go -C "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074" test ./... -count=1` → pass.
+- `make -C "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074" test` → pass.
+
+### Defects
+- `BUG-010` (open, medium): docs/runtime mismatch for CNI command usage in `docs/cilium.md`.
+
+### Residual risk
+- Medium: users following current Cilium docs hit an immediate CLI error (`unknown flag: --cni`), indicating documentation no longer matches supported runtime behavior.
+
+## QA Engineer Review (2026-04-26) — BL-019
+- Worktree: `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481`
+- Engineer commit reviewed: `7f6ff7368898a4b35191871b80fc625caecefb57`
+- Verdict: **PASS**
+
+### Acceptance checks
+1) Validate BL-019 intended fixes are present and correct.
+- Timer loop leak mitigation in manager polling path:
+  - Verified `waitForContainersRunning` switched from looped `time.After(...)` to `time.NewTimer(...)` with explicit stop/drain on cancel.
+  - Focused test pass: `go test -C /Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481 ./pkg/cluster -run TestWaitForContainersRunning_ReturnsContextErrorPromptly -count=1`.
+- Unused `ctx` removal in reconcile planning path:
+  - Verified `calculateReconcilePlan` signature now excludes context and all callsites/tests updated accordingly.
+- Network list error text correction:
+  - Verified `ListNetworks` now returns `failed to list networks` on command failure.
+  - Focused test pass: `go test -C /Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481 ./pkg/provider/dockercli -run TestListNetworks_ReturnsListSpecificErrorTextOnFailure -count=1`.
+- Vault `Ports` double-assign fix:
+  - Verified duplicate assignment removed; first vault instance receives a single `8200:8200` mapping.
+  - Focused test pass: `go test -C /Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481 ./pkg/cluster -run TestNewClusterConfig_VaultPortsAssignedOnce -count=1`.
+- Image fallback fix in docker provider:
+  - Verified create fallback now uses `cfg.Image.Name` when tag/digest are unset.
+  - Focused test pass: `go test -C /Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481 ./pkg/provider/dockercli -run TestCreateContainer_UsesImageNameWhenTagAndDigestUnset -count=1`.
+
+2) Validate focused tests + full-suite health.
+- Focused checks:
+  - `go test -C /Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481 ./pkg/cluster -run 'TestWaitForContainersRunning_ReturnsContextErrorPromptly|TestNewClusterConfig_VaultPortsAssignedOnce|TestCalculateReconcilePlan_' -count=1` → `ok github.com/stenh0use/hind/pkg/cluster`
+  - `go test -C /Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481 ./pkg/provider/dockercli -run 'TestCreateContainer_UsesImageNameWhenTagAndDigestUnset|TestListNetworks_ReturnsListSpecificErrorTextOnFailure' -count=1` → `ok github.com/stenh0use/hind/pkg/provider/dockercli`
+- Full checks:
+  - `go test -C /Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481 ./... -count=1` → pass across all packages.
+  - `make -C /Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481 test` → pass.
+
+3) Confirm no regressions introduced and identify defects.
+- No BL-019 regressions or new defects confirmed in this validation pass.
+- `/Users/james/dev/github/stenh0use/hind/.claude/team/hind/bugs.md` unchanged.
+
+### Evidence commands/output summary
+- `git -C "/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a0a8aa0c2ace95481" show --patch 7f6ff7368898a4b35191871b80fc625caecefb57` (verified scope and implementation details for all five fixes).
+- Focused test commands above all returned `ok` for targeted packages.
+- `go test ./... -count=1` and `make test` both completed successfully in the BL-019 worktree.
+
+### Defects
+- None newly identified for BL-019.
+
+### Residual risk
+- Low: timer fix coverage is behavioral (prompt cancel-path return) rather than profiler-based leak measurement, but implementation and tests align with acceptance scope.
+
+### QA outcome
+- BL-019: **approved**
+
+
+
+## Engineer Remediation Handoff (2026-04-26) — BL-016 BUG-010
+1. What changed and why
+   - Updated Cilium documentation to remove the unsupported `hind start --cni=cilium` instruction.
+   - Replaced that step with explicit guidance that the `--cni` CLI path was removed during CNI package cleanup and there is currently no supported CLI path to enable Cilium.
+   - This remediates BUG-010 by aligning docs with current runtime behavior.
+2. Files changed
+   - `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074/docs/cilium.md`
+3. Verification commands/results
+   - `go -C /Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074 test ./... -count=1` → pass
+   - `make -C /Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074 test` → pass
+   - `rg -n --fixed-strings -- "--cni" /Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074/docs` → one informational match in `docs/cilium.md` noting `--cni=cilium` was removed; no remaining instruction to run that flag
+4. Explicit review request
+   - Requesting renewed staff-engineer review and QA re-validation for BL-016 BUG-010 remediation.
+
+
+## Staff Engineer Re-Review (2026-04-26) — BL-016 BUG-010
+- Worktree reviewed: `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074`
+- Commits reviewed:
+  - Original BL-016: `d9a75bf149ac931f26f1cf57bc5a5b30520b69a9`
+  - BUG-010 remediation: `212dbc4f8a1ff8f16d54d54b79b3e2f4d8ea1f50`
+- Verdict: **approved**
+
+### Rationale against re-review scope
+1. Dead package removal remains correct.
+   - `pkg/cluster/cni` remains deleted (directory absent), including prior removed files:
+     - `pkg/cluster/cni/cni.go`
+     - `pkg/cluster/cni/cilium/cilium.go`
+     - `pkg/cluster/cni/factory/factory.go`
+     - `pkg/cluster/cni/none/none.go`
+2. BUG-010 docs/runtime alignment is resolved.
+   - `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074/docs/cilium.md` no longer instructs running `hind start --cni=cilium`.
+   - The doc now explicitly states that `--cni=cilium` was removed and no supported CLI path currently enables Cilium.
+3. No boundary regressions found.
+   - No active-code references remain to removed CNI package symbols/paths (`pkg/cluster/cni`, `CNIType`, `NewDefaultFactory`, `NoneCNI`, `CiliumCNI`) outside `.claude` metadata.
+   - No new runtime coupling introduced; remediation is documentation-only.
+4. Verification evidence is present and current.
+   - `go -C /Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074 test ./... -count=1` → pass.
+   - `make -C /Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074 test` → pass.
+
+### Next action
+- Team lead may close BL-016 and mark BUG-010 resolved.

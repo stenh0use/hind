@@ -88,3 +88,15 @@
 - Expected result: command should template out the build files and then build the container image(s)
 - Status: open
 - Linked work item: BL-013
+
+## BUG-010
+- Description: `docs/cilium.md` documents `hind start --cni=cilium`, but CLI has no `--cni` flag; docs reference an unusable runtime path after BL-016 (severity: medium)
+- Repro steps or triggering condition:
+  1. Run `go -C /Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074 run ./cmd/hind start --help`
+  2. Observe there is no `--cni` flag in start command flags
+  3. Run `go -C /Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074 run ./cmd/hind start --cni=cilium`
+- Observed result: command fails with `unknown flag: --cni`; docs still instruct this command in `/Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a81fdc154872b9074/docs/cilium.md`
+- Expected result: active docs should not prescribe unsupported CLI flags/runtime paths, or should be clearly moved to non-active/archive context to avoid broken assumptions
+- Status: open
+- Linked work item: BL-016
+
