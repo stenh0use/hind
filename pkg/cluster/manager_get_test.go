@@ -19,6 +19,8 @@ type stubProvider struct {
 	inspectNetworkFn   func(ctx context.Context, name string) (*provider.NetworkInfo, error)
 	inspectContainerFn func(ctx context.Context, name string) (*provider.ContainerInfo, error)
 	stopContainerFn    func(ctx context.Context, name string) error
+	deleteContainerFn  func(ctx context.Context, name string) error
+	deleteNetworkFn    func(ctx context.Context, name string) error
 }
 
 func (s *stubProvider) CreateContainer(ctx context.Context, cfg config.Node) (string, error) {
@@ -37,6 +39,9 @@ func (s *stubProvider) StopContainer(ctx context.Context, name string) error {
 }
 
 func (s *stubProvider) DeleteContainer(ctx context.Context, name string) error {
+	if s.deleteContainerFn != nil {
+		return s.deleteContainerFn(ctx, name)
+	}
 	return nil
 }
 
@@ -56,6 +61,9 @@ func (s *stubProvider) CreateNetwork(ctx context.Context, cfg config.Network) (s
 }
 
 func (s *stubProvider) DeleteNetwork(ctx context.Context, name string) error {
+	if s.deleteNetworkFn != nil {
+		return s.deleteNetworkFn(ctx, name)
+	}
 	return nil
 }
 
@@ -357,5 +365,109 @@ func TestManagerLoadPersistedConfig_MissingAndNoDefaultsErrors(t *testing.T) {
 	m := &Manager{}
 	if err := m.LoadPersistedConfig(); err == nil {
 		t.Fatal("LoadPersistedConfig() expected error when no persisted file and no in-memory config")
+	}
+}
+
+func TestManagerStop_PropagatesInspectContainerError(t *testing.T) {
+	t.Parallel()
+
+	wantErr := errors.New("container inspect failed")
+	m := &Manager{
+		logger: &log.Logger{Handler: discard.New(), Level: log.ErrorLevel},
+		provider: &stubProvider{
+			inspectContainerFn: func(ctx context.Context, name string) (*provider.ContainerInfo, error) {
+				// Return nil info with a real error (e.g. docker daemon error)
+				return nil, wantErr
+			},
+		},
+		config: &config.Cluster{
+			Name:    "demo",
+			Network: config.Network{Name: "hind.demo"},
+			Nodes:   []config.Node{{Name: "hind.demo.consul.01"}},
+		},
+	}
+
+	err := m.Stop(context.Background())
+	if err == nil {
+		t.Fatal("Stop() expected error when InspectContainer returns error, got nil")
+	}
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Stop() error = %v, want wrapped %v", err, wantErr)
+	}
+}
+
+func TestManagerDelete_PropagatesInspectContainerError(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	fm, err := file.New(root)
+	if err != nil {
+		t.Fatalf("file.New() error = %v", err)
+	}
+
+	wantErr := errors.New("container inspect failed")
+	m := &Manager{
+		logger: &log.Logger{Handler: discard.New(), Level: log.ErrorLevel},
+		provider: &stubProvider{
+			inspectContainerFn: func(ctx context.Context, name string) (*provider.ContainerInfo, error) {
+				// Return nil info with a real error (e.g. docker daemon error)
+				return nil, wantErr
+			},
+		},
+		config: &config.Cluster{
+			Name:    "demo",
+			Network: config.Network{Name: "hind.demo"},
+			Nodes:   []config.Node{{Name: "hind.demo.consul.01"}},
+		},
+		fm:         fm,
+		configFile: file.JoinPath(ClusterConfigDir, "demo", ClusterConfigFile),
+	}
+
+	err = m.Delete(context.Background())
+	if err == nil {
+		t.Fatal("Delete() expected error when InspectContainer returns error, got nil")
+	}
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Delete() error = %v, want wrapped %v", err, wantErr)
+	}
+}
+
+func TestManagerDelete_PropagatesInspectNetworkError(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	fm, err := file.New(root)
+	if err != nil {
+		t.Fatalf("file.New() error = %v", err)
+	}
+
+	wantErr := errors.New("network inspect failed")
+	m := &Manager{
+		logger: &log.Logger{Handler: discard.New(), Level: log.ErrorLevel},
+		provider: &stubProvider{
+			inspectContainerFn: func(ctx context.Context, name string) (*provider.ContainerInfo, error) {
+				// Container does not exist — nil, nil is the not-found signal
+				return nil, nil
+			},
+			inspectNetworkFn: func(ctx context.Context, name string) (*provider.NetworkInfo, error) {
+				// Return nil info with a real error
+				return nil, wantErr
+			},
+		},
+		config: &config.Cluster{
+			Name:    "demo",
+			Network: config.Network{Name: "hind.demo"},
+			Nodes:   []config.Node{},
+		},
+		fm:         fm,
+		configFile: file.JoinPath(ClusterConfigDir, "demo", ClusterConfigFile),
+	}
+
+	err = m.Delete(context.Background())
+	if err == nil {
+		t.Fatal("Delete() expected error when InspectNetwork returns error, got nil")
+	}
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Delete() error = %v, want wrapped %v", err, wantErr)
 	}
 }

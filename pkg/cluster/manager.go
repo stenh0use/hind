@@ -153,13 +153,14 @@ func (m *Manager) Stop(ctx context.Context) error {
 	// Stop each node container
 	for _, node := range m.config.Nodes {
 		containerInfo, err := m.provider.InspectContainer(ctx, node.Name)
+		if err != nil {
+			return fmt.Errorf("failed to inspect container %s: %w", node.Name, err)
+		}
 
 		// Skip if container doesn't exist
 		if containerInfo == nil {
 			m.logger.WithField("name", node.Name).Debug("container not found, skipping...")
 			continue
-		} else if err != nil {
-			return err
 		}
 
 		// Check current status and stop if running
@@ -204,14 +205,16 @@ func (m *Manager) Delete(ctx context.Context) error {
 	// Delete cluster nodes
 	for _, node := range m.config.Nodes {
 		containerInfo, err := m.provider.InspectContainer(ctx, node.Name)
+		if err != nil {
+			return fmt.Errorf("failed to inspect container %s: %w", node.Name, err)
+		}
 		if containerInfo == nil {
 			m.logger.WithField("name", node.Name).Debug("container not found, skipping...")
 			continue
-		} else if err != nil {
-			return err
-		} else if containerInfo.Status == provider.Running.String() {
+		}
+		if containerInfo.Status == provider.Running.String() {
 			if err = m.provider.StopContainer(ctx, node.Name); err != nil {
-				return err
+				return fmt.Errorf("failed to stop container %s: %w", node.Name, err)
 			}
 		}
 
@@ -223,7 +226,10 @@ func (m *Manager) Delete(ctx context.Context) error {
 
 	// Check if network exists
 	netInfo, err := m.provider.InspectNetwork(ctx, m.config.Network.Name)
-	if err == nil && netInfo != nil {
+	if err != nil {
+		return fmt.Errorf("failed to inspect network %s: %w", m.config.Network.Name, err)
+	}
+	if netInfo != nil {
 		if err := m.provider.DeleteNetwork(ctx, m.config.Network.Name); err != nil {
 			return fmt.Errorf("failed to delete network: %w", err)
 		}
