@@ -1,3 +1,6 @@
 .vscode
 /bin/
 TODO
+
+skills-lock.json
+.claude/skills/golang-pro/
