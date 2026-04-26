@@ -6,7 +6,9 @@
       "Bash(git *)",
       "Bash(go *)",
       "Bash(make *)",
-      "Bash(./bin/hind *)"
+      "Bash(./bin/hind *)",
+      "Edit(.claude/team/*)",
+      "Write(.claude/team/*)"
     ]
   }
 }
