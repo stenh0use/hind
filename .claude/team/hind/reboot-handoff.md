@@ -1,43 +1,96 @@
-# Reboot Handoff — Team Lead
+# Reboot Handoff u2014 hind dev-team
 
-## Resume target
-Continue backlog execution for team `hind` from current state with worktree-base alignment rules in effect.
+Date: 2026-04-26  
+Branch: `refactor-cleanup`  
+Base for next work: HEAD `e94e1d4`
 
-## Canonical context (do not duplicate)
-- Backlog + priorities: @.claude/team/backlog.md
-- Team runtime state: @.claude/team/hind/work-items.md
-- Detailed handoffs/findings: @.claude/team/hind/handoff.md
-- Skill workflow rules (updated): @.claude/skills/dev-team/SKILL.md
-- Project workflow constraints: @AGENTS.md
+---
 
-## Current branch/commit anchors
-- Coordinator branch: `refactor-cleanup`
-- Latest coordinator commits:
-  - `df28e90` chore: enforce worktree base alignment in dev-team skill
-  - `aba91c9` fix: remove unsupported start version contract
+## What was accomplished this session
 
-## Worktree branch status
-- BL-001 worktree branch: `worktree-agent-adb08eca2723fce95`
-  - Latest commit: `db0524a` (panic guard + tests)
-  - Rebased onto latest `refactor-cleanup`
-- BL-002 worktree branch: `worktree-agent-a0d98ce5a4a60f2f4`
-  - No commit beyond baseline; has unstaged edits in:
-    - `pkg/cluster/cluster.go`
-    - `pkg/cluster/manager.go`
-    - `pkg/file/file.go`
-  - Rebased onto latest `refactor-cleanup`
-  - Currently not merge-ready (build/test failure)
+All foundational bugfix items (BL-001 through BL-008) are now merged to `refactor-cleanup`. Each went through the full engineer u2192 staff u2192 QA gate pipeline.
 
-## Immediate next actions after reboot
-1. Re-open team state from @.claude/team/hind/work-items.md and @.claude/team/hind/handoff.md.
-2. Keep using @.claude/skills/dev-team/SKILL.md worktree rules:
-   - commit coordinator changes before spawning new worktrees,
-   - base worktrees on current branch,
-   - rebase worktrees before review/integration.
-3. Resume BL-002 in its existing worktree first (do not start parallel follow-ons until BL-002 is build-green).
-4. After BL-002 compiles/tests, run staff/QA gates for BL-001/BL-002/BL-005 batch per @.claude/skills/dev-team/SKILL.md.
+| Commit | Item | Description |
+|--------|------|-------------|
+| `cb15c5e` | BL-002 | Path confinement: block traversal/root escape in cluster and file paths |
+| `c7f62bf` | BL-008 | First-run `hind list` returns empty-state success (no panic on missing config dir) |
+| `4f1353d` | BL-003 | Load persisted cluster config for `hind get` / `hind stop` |
+| `5393c24` | BL-007 | `hind get` status derived from runtime state; ports rendered as comma-separated string |
+| `d91313a` | BL-006 | `hind list` maps Docker `exited` u2192 `stopped` (consistent with `hind get`) |
+| `e94e1d4` | BL-004 | Inspect errors in `Stop()` / `Delete()` propagated instead of silently discarded |
 
-## BL-002 blocker snapshot
-Last observed failure while testing BL-002 worktree:
-- `pkg/cluster/manager.go:39:12: undefined: ValidateClusterName`
-- `pkg/cluster/cluster.go`: unused imports (`path/filepath`, `strings`)
+BL-001 and BL-005 were merged in the prior session (see earlier commits on the branch).
+
+---
+
+## Current state of the backlog
+
+All items through BL-008 are **Completed**. Items BL-009 onward are **Todo**.
+
+Unblocked and ready to start:
+- **BL-010** u2014 Deepen behavioral/error-path test coverage (all blockers resolved)
+- **BL-011** u2014 Align docs/comments with runtime behavior (all blockers resolved)
+- **BL-013** u2014 Inject `provider.Client` into `cluster.New()` via parameter
+- **BL-014** u2014 Extract client node factory function
+- **BL-016** u2014 Remove or complete dead CNI sub-package
+- **BL-019** u2014 Fix minor correctness issues (unused ctx, wrong error text, Ports double-assign, etc.)
+- **BL-023** u2014 Add executor seam to `internal/docker` for unit testing
+- **BL-024** u2014 Harden metadata file path in `build/image`
+
+Now unblocked after this session (were waiting on BL-004/BL-006/BL-007):
+- **BL-009** u2014 Tighten provider/data-structure shaping
+- **BL-015** u2014 Populate or remove unused `ContainerInfo` fields
+
+Still blocked:
+- BL-017 u2192 BL-013
+- BL-020, BL-021 u2192 BL-013
+- BL-018, BL-022 u2192 BL-015
+- BL-025 u2192 BL-013
+
+See `.claude/team/hind/work-items.md` for the full table.
+
+---
+
+## Key architectural notes to carry forward
+
+1. **Provider-layer status normalization (BL-025):** `exited` u2192 `stopped` is currently duplicated in both `pkg/cmd/hind/get/get.go` and `pkg/cmd/hind/list/list.go`. The correct fix is to normalize in `pkg/provider/dockercli` so callers only ever see `provider.Running | Stopped | Error`. BL-025 tracks this; it depends on BL-013.
+
+2. **Dependency injection gap (BL-013):** `cluster.New()` hardcodes `dockercli.New()`. Until resolved, unit tests that need a stub provider must use the workaround pattern established in `manager_get_test.go` (internal stub + direct struct construction).
+
+3. **Minor correctness issues (BL-019):** Several small bugs logged u2014 unused `ctx` parameter, wrong error text, `Ports` double-assign, bad image fallback, timer leak. Low risk individually but worth cleaning up before BL-009 or BL-010.
+
+4. **Dead CNI package (BL-016):** `pkg/cluster/cni/` is unreferenced. Either wire it up or delete it before it causes confusion during BL-009 (provider/data-structure shaping).
+
+---
+
+## Recommended next session start
+
+**Suggested first wave (parallel, independent):**
+- BL-019 (minor correctness fixes) u2014 small, safe, no blockers
+- BL-016 (remove/complete dead CNI) u2014 small, no blockers
+- BL-013 (provider.Client injection) u2014 foundational; unlocks BL-017, BL-020, BL-025
+- BL-010 (deepen test coverage) u2014 now fully unblocked
+
+Once BL-013 lands, the BL-017 / BL-020 / BL-025 chain unlocks.
+
+---
+
+## Worktrees
+
+No active worktrees. All cleaned up.
+
+```
+$ git worktree list
+/Users/james/dev/github/stenh0use/hind  e94e1d4 [refactor-cleanup]
+```
+
+---
+
+## How to resume
+
+```bash
+cd /Users/james/dev/github/stenh0use/hind
+git checkout refactor-cleanup   # should already be here
+go test ./... -count=1          # verify clean baseline
+# Then: /dev-team hind
+```

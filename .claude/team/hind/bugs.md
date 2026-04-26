@@ -69,3 +69,13 @@
 - Status: open
 - Linked work item: RE-001
 
+## BUG-008
+- Description: `hind get` can still panic for missing/non-existent cluster network in BL-007 validation worktree (severity: high)
+- Repro steps or triggering condition:
+  1. Run `go -C /Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a234bffc450af240e run ./cmd/hind get qa-nonexistent`
+  2. (Also reproducible with malformed name) run `go -C /Users/james/dev/github/stenh0use/hind/.claude/worktrees/agent-a234bffc450af240e run ./cmd/hind get ../../etc`
+- Observed result: process panics with nil-pointer dereference in `pkg/cluster/manager.go:252` (`state.Network = *networkInfo`)
+- Expected result: command should return a controlled user-facing error (for example cluster/network not found) and never panic
+- Status: open
+- Linked work item: BL-007
+
