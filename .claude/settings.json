@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rg *)",
+      "Bash(ls *)",
+      "Bash(git *)",
+      "Bash(go *)",
+      "Bash(make *)",
+      "Bash(./bin/hind *)"
+    ]
+  }
+}

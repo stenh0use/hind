@@ -84,10 +84,10 @@ Initial file content:
 - Do not close an agent before its deliverable and handoff are complete.
 - Approve all agent escalations that you deem to be safe and within the scope of the task.
 
-### Worktree Base Rules (required)
+### Worktree Base Rules
 
 - Before creating any new subagent worktree, commit relevant root-branch changes in the main workspace so subagents start from an up-to-date, mergeable baseline.
-- Create subagent worktrees from the current working branch tip (for example `refactor-cleanup`), not from `main`, unless the user explicitly requests otherwise.
+- Create subagent worktrees from the current working branch tip unless the user explicitly requests otherwise. Eg. `git branch --show-current` will show you the current branch name if you are not sure.
 - Before staff/QA review gates or integration, rebase each active subagent worktree branch onto the current working branch `HEAD`.
 - If the current working branch advances while subagents are active, rebase those active worktree branches again before final validation.
 - Treat branch-base alignment as a required gate: do not mark work as ready to merge until worktree branches are confirmed rebased on the current branch.
