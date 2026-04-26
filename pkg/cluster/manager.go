@@ -142,14 +142,8 @@ func (m *Manager) waitForContainersRunning(ctx context.Context, timeout time.Dur
 }
 
 func (m *Manager) Stop(ctx context.Context) error {
-	// Load cluster config from disk if not already in memory
-	// This allows Stop to work even if Manager was created without loading config
-	if m.config == nil || m.config.Name == "" {
-		cfg, err := m.loadConfig()
-		if err != nil {
-			return fmt.Errorf("failed to load cluster config: %w", err)
-		}
-		m.config = cfg
+	if err := m.LoadPersistedConfig(); err != nil {
+		return err
 	}
 
 	// Track how many containers were stopped
@@ -247,8 +241,10 @@ func (m *Manager) Delete(ctx context.Context) error {
 func (m *Manager) Get(ctx context.Context) (*provider.ClusterInfo, error) {
 	state := &provider.ClusterInfo{}
 
-	// Use in-memory config (don't load from disk)
-	// This allows Get() to work during reconciliation before config is saved
+	if err := m.LoadPersistedConfig(); err != nil {
+		return nil, err
+	}
+
 	networkInfo, err := m.provider.InspectNetwork(ctx, m.config.Network.Name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect network: %w", err)
@@ -281,7 +277,29 @@ func (m *Manager) Provider() provider.Client {
 
 // ConfigFileExists checks if the cluster config file exists
 func (m *Manager) ConfigFileExists() bool {
+	if m.fm == nil {
+		return false
+	}
 	return m.fm.FileExists(m.configFile)
+}
+
+// LoadPersistedConfig loads cluster configuration from disk when available.
+// If no persisted config exists, the current in-memory config is left unchanged.
+func (m *Manager) LoadPersistedConfig() error {
+	if !m.ConfigFileExists() {
+		if m.config == nil || m.config.Name == "" {
+			return fmt.Errorf("cluster config not found")
+		}
+		return nil
+	}
+
+	cfg, err := m.loadConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load cluster config: %w", err)
+	}
+
+	m.config = cfg
+	return nil
 }
 
 // SetClientCount updates the number of client nodes in the cluster configuration

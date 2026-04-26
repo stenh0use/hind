@@ -2,17 +2,23 @@ package cluster
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/apex/log"
+	"github.com/apex/log/handlers/discard"
 	"github.com/stenh0use/hind/pkg/config"
+	"github.com/stenh0use/hind/pkg/file"
 	"github.com/stenh0use/hind/pkg/provider"
 )
 
 type stubProvider struct {
 	inspectNetworkFn   func(ctx context.Context, name string) (*provider.NetworkInfo, error)
 	inspectContainerFn func(ctx context.Context, name string) (*provider.ContainerInfo, error)
+	stopContainerFn    func(ctx context.Context, name string) error
 }
 
 func (s *stubProvider) CreateContainer(ctx context.Context, cfg config.Node) (string, error) {
@@ -24,6 +30,9 @@ func (s *stubProvider) StartContainer(ctx context.Context, name string) error {
 }
 
 func (s *stubProvider) StopContainer(ctx context.Context, name string) error {
+	if s.stopContainerFn != nil {
+		return s.stopContainerFn(ctx, name)
+	}
 	return nil
 }
 
@@ -64,6 +73,28 @@ func (s *stubProvider) InspectNetwork(ctx context.Context, name string) (*provid
 func TestManagerGet_NetworkNotFoundDoesNotPanic(t *testing.T) {
 	t.Parallel()
 
+	root := t.TempDir()
+	fm, err := file.New(root)
+	if err != nil {
+		t.Fatalf("file.New() error = %v", err)
+	}
+
+	persisted := &config.Cluster{
+		Name:    "demo",
+		Network: config.Network{Name: "hind.demo"},
+		Nodes: []config.Node{
+			{Name: "hind.demo.consul.01"},
+		},
+	}
+	persistedData, err := json.Marshal(persisted)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	configPath := file.JoinPath(ClusterConfigDir, "demo", ClusterConfigFile)
+	if err := fm.WriteFile(configPath, persistedData); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
 	m := &Manager{
 		provider: &stubProvider{
 			inspectNetworkFn: func(ctx context.Context, name string) (*provider.NetworkInfo, error) {
@@ -75,11 +106,13 @@ func TestManagerGet_NetworkNotFoundDoesNotPanic(t *testing.T) {
 		},
 		config: &config.Cluster{
 			Name:    "demo",
-			Network: config.Network{Name: "hind.demo"},
+			Network: config.Network{Name: "hind.demo-default"},
 			Nodes: []config.Node{
-				{Name: "hind.demo.consul.01"},
+				{Name: "hind.demo.client.01"},
 			},
 		},
+		fm:         fm,
+		configFile: configPath,
 	}
 
 	got, err := m.Get(context.Background())
@@ -154,5 +187,175 @@ func TestManagerGet_ReturnsInspectContainerError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "failed to inspect node 'hind.demo.consul.01'") {
 		t.Fatalf("Get() error = %q, missing node context", err)
+	}
+}
+
+func TestManagerGet_UsesPersistedTopology(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	fm, err := file.New(root)
+	if err != nil {
+		t.Fatalf("file.New() error = %v", err)
+	}
+
+	persisted := &config.Cluster{
+		Name:    "demo",
+		Network: config.Network{Name: "hind.demo"},
+		Nodes: []config.Node{
+			{Name: "hind.demo.consul.01"},
+			{Name: "hind.demo.nomad.01"},
+			{Name: "hind.demo.client.01"},
+			{Name: "hind.demo.client.02"},
+			{Name: "hind.demo.client.03"},
+		},
+	}
+
+	persistedData, err := json.Marshal(persisted)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	configPath := file.JoinPath(ClusterConfigDir, "demo", ClusterConfigFile)
+	if err := fm.WriteFile(configPath, persistedData); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	inspected := []string{}
+	m := &Manager{
+		provider: &stubProvider{
+			inspectNetworkFn: func(ctx context.Context, name string) (*provider.NetworkInfo, error) {
+				return &provider.NetworkInfo{Name: name}, nil
+			},
+			inspectContainerFn: func(ctx context.Context, name string) (*provider.ContainerInfo, error) {
+				inspected = append(inspected, name)
+				return &provider.ContainerInfo{Name: name, Status: provider.Running.String()}, nil
+			},
+		},
+		config: &config.Cluster{
+			Name:    "demo",
+			Network: config.Network{Name: "hind.demo-default"},
+			Nodes: []config.Node{
+				{Name: "hind.demo.consul.01"},
+				{Name: "hind.demo.nomad.01"},
+				{Name: "hind.demo.client.01"},
+			},
+		},
+		fm:         fm,
+		configFile: configPath,
+	}
+
+	state, err := m.Get(context.Background())
+	if err != nil {
+		t.Fatalf("Get() unexpected error: %v", err)
+	}
+
+	if state.Network.Name != "hind.demo" {
+		t.Fatalf("Get().Network.Name = %q, want %q", state.Network.Name, "hind.demo")
+	}
+
+	if len(state.Containers) != len(persisted.Nodes) {
+		t.Fatalf("Get().Containers len = %d, want %d", len(state.Containers), len(persisted.Nodes))
+	}
+
+	if !slices.Contains(inspected, "hind.demo.client.03") {
+		t.Fatalf("Get() did not inspect persisted scaled node hind.demo.client.03; inspected=%v", inspected)
+	}
+}
+
+func TestManagerStop_UsesPersistedTopology(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	fm, err := file.New(root)
+	if err != nil {
+		t.Fatalf("file.New() error = %v", err)
+	}
+
+	persisted := &config.Cluster{
+		Name:    "demo",
+		Network: config.Network{Name: "hind.demo"},
+		Nodes: []config.Node{
+			{Name: "hind.demo.consul.01"},
+			{Name: "hind.demo.nomad.01"},
+			{Name: "hind.demo.client.01"},
+			{Name: "hind.demo.client.02"},
+			{Name: "hind.demo.client.03"},
+		},
+	}
+	persistedData, err := json.Marshal(persisted)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	configPath := file.JoinPath(ClusterConfigDir, "demo", ClusterConfigFile)
+	if err := fm.WriteFile(configPath, persistedData); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	stopped := []string{}
+	m := &Manager{
+		logger: &log.Logger{Handler: discard.New(), Level: log.ErrorLevel},
+		provider: &stubProvider{
+			inspectContainerFn: func(ctx context.Context, name string) (*provider.ContainerInfo, error) {
+				return &provider.ContainerInfo{Name: name, Status: provider.Running.String()}, nil
+			},
+			stopContainerFn: func(ctx context.Context, name string) error {
+				stopped = append(stopped, name)
+				return nil
+			},
+		},
+		config: &config.Cluster{
+			Name:    "demo",
+			Network: config.Network{Name: "hind.demo-default"},
+			Nodes: []config.Node{
+				{Name: "hind.demo.consul.01"},
+				{Name: "hind.demo.nomad.01"},
+				{Name: "hind.demo.client.01"},
+			},
+		},
+		fm:         fm,
+		configFile: configPath,
+	}
+
+	if err := m.Stop(context.Background()); err != nil {
+		t.Fatalf("Stop() unexpected error: %v", err)
+	}
+
+	if len(stopped) != len(persisted.Nodes) {
+		t.Fatalf("Stop() stopped %d nodes, want %d", len(stopped), len(persisted.Nodes))
+	}
+
+	if !slices.Contains(stopped, "hind.demo.client.03") {
+		t.Fatalf("Stop() did not stop persisted scaled node hind.demo.client.03; stopped=%v", stopped)
+	}
+}
+
+func TestManagerLoadPersistedConfig_MissingFileKeepsDefaults(t *testing.T) {
+	t.Parallel()
+
+	m := &Manager{
+		config: &config.Cluster{
+			Name:    "demo",
+			Network: config.Network{Name: "hind.demo-default"},
+			Nodes:   []config.Node{{Name: "hind.demo.consul.01"}},
+		},
+	}
+
+	if err := m.LoadPersistedConfig(); err != nil {
+		t.Fatalf("LoadPersistedConfig() unexpected error: %v", err)
+	}
+
+	if m.config.Network.Name != "hind.demo-default" {
+		t.Fatalf("LoadPersistedConfig() changed defaults unexpectedly; got network %q", m.config.Network.Name)
+	}
+}
+
+func TestManagerLoadPersistedConfig_MissingAndNoDefaultsErrors(t *testing.T) {
+	t.Parallel()
+
+	m := &Manager{}
+	if err := m.LoadPersistedConfig(); err == nil {
+		t.Fatal("LoadPersistedConfig() expected error when no persisted file and no in-memory config")
 	}
 }
