@@ -10,7 +10,30 @@ import (
 	"github.com/apex/log"
 	"github.com/apex/log/handlers/discard"
 	"github.com/stenh0use/hind/pkg/config"
+	"github.com/stenh0use/hind/pkg/provider"
 )
+
+func TestNormalizeContainerStatus(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{name: "running passthrough", input: provider.Running.String(), expected: provider.Running.String()},
+		{name: "stopped passthrough", input: provider.Stopped.String(), expected: provider.Stopped.String()},
+		{name: "exited maps to stopped", input: "exited", expected: provider.Stopped.String()},
+		{name: "uppercase exited maps to stopped", input: "EXITED", expected: provider.Stopped.String()},
+		{name: "unknown passthrough", input: "restarting", expected: "restarting"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := normalizeContainerStatus(tt.input); got != tt.expected {
+				t.Fatalf("normalizeContainerStatus(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
 
 func TestCreateContainer_UsesImageNameWhenTagAndDigestUnset(t *testing.T) {
 	tmpDir := t.TempDir()

@@ -144,11 +144,11 @@ func TestCalculateReconcilePlan_StoppedContainers(t *testing.T) {
 		Containers: map[string]*provider.ContainerInfo{
 			"hind.test.consul.01": {
 				Name:   "hind.test.consul.01",
-				Status: "exited",
+				Status: provider.Stopped.String(),
 			},
 			"hind.test.nomad.01": {
 				Name:   "hind.test.nomad.01",
-				Status: "exited",
+				Status: provider.Stopped.String(),
 			},
 		},
 	}
@@ -233,7 +233,7 @@ func TestCalculateReconcilePlan_MixedStates(t *testing.T) {
 			},
 			"hind.test.nomad.01": {
 				Name:   "hind.test.nomad.01",
-				Status: "exited",
+				Status: provider.Stopped.String(),
 			},
 			"hind.test.vault.01": {
 				Name:   "hind.test.vault.01",

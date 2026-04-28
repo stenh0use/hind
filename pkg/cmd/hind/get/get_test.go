@@ -182,9 +182,14 @@ func TestAggregateStatus(t *testing.T) {
 			expected:   provider.Running.String(),
 		},
 		{
-			name:       "all exited treated as stopped",
-			containers: []provider.ContainerInfo{{Status: "exited"}, {Status: "exited"}},
+			name:       "all stopped",
+			containers: []provider.ContainerInfo{{Status: provider.Stopped.String()}, {Status: provider.Stopped.String()}},
 			expected:   provider.Stopped.String(),
+		},
+		{
+			name:       "exited is unknown without provider normalization",
+			containers: []provider.ContainerInfo{{Status: "exited"}},
+			expected:   provider.Error.String(),
 		},
 		{
 			name:       "mixed running and stopped reports error",

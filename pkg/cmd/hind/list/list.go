@@ -155,7 +155,7 @@ func aggregateClusterStatus(info *provider.ClusterInfo, cfg *config.Cluster) *cl
 		switch container.Status {
 		case provider.Running.String():
 			runningCount++
-		case provider.Stopped.String(), "exited":
+		case provider.Stopped.String():
 			stoppedCount++
 		case provider.Error.String():
 			errorCount++

@@ -284,7 +284,26 @@ func TestAggregateClusterStatus_OldestCreationTime(t *testing.T) {
 	}
 }
 
-func TestAggregateClusterStatus_ExitedMappedToStopped(t *testing.T) {
+func TestAggregateClusterStatus_StoppedStatusComesFromProvider(t *testing.T) {
+	info := &provider.ClusterInfo{
+		Containers: []provider.ContainerInfo{
+			{Name: "node1", Status: provider.Stopped.String(), Created: time.Now().Format(time.RFC3339)},
+			{Name: "node2", Status: provider.Stopped.String(), Created: time.Now().Format(time.RFC3339)},
+		},
+	}
+
+	cfg := &config.Cluster{
+		Nodes: []config.Node{{}, {}},
+	}
+
+	result := aggregateClusterStatus(info, cfg)
+
+	if result.Status != "stopped" {
+		t.Errorf("Expected status 'stopped' for stopped containers, got '%s'", result.Status)
+	}
+}
+
+func TestAggregateClusterStatus_ExitedStatusWithoutNormalizationIsPartial(t *testing.T) {
 	info := &provider.ClusterInfo{
 		Containers: []provider.ContainerInfo{
 			{Name: "node1", Status: "exited", Created: time.Now().Format(time.RFC3339)},
@@ -298,8 +317,8 @@ func TestAggregateClusterStatus_ExitedMappedToStopped(t *testing.T) {
 
 	result := aggregateClusterStatus(info, cfg)
 
-	if result.Status != "stopped" {
-		t.Errorf("Expected status 'stopped' for exited containers, got '%s'", result.Status)
+	if result.Status != "partial" {
+		t.Errorf("Expected status 'partial' without provider normalization, got '%s'", result.Status)
 	}
 }
 

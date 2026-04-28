@@ -106,7 +106,7 @@ func aggregateStatus(state *provider.ClusterInfo) string {
 		case provider.Running.String():
 			hasRunning = true
 			allStopped = false
-		case provider.Stopped.String(), "exited":
+		case provider.Stopped.String():
 			hasStopped = true
 			allRunning = false
 		default:

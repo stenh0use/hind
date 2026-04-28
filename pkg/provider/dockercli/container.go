@@ -22,6 +22,13 @@ func baseContainerCmd(ctx context.Context) *exec.Cmd {
 	return baseClientCmd(ctx, containerCmd)
 }
 
+func normalizeContainerStatus(status string) string {
+	if strings.EqualFold(status, "exited") {
+		return provider.Stopped.String()
+	}
+	return status
+}
+
 // Create and start a container
 func (c *Client) CreateContainer(ctx context.Context, cfg config.Node) (string, error) {
 	if cfg.Name == "" {
@@ -214,7 +221,7 @@ func (c *Client) InspectContainer(ctx context.Context, name string) (*provider.C
 		Name:     res.Name,
 		Created:  res.Created,
 		HostName: res.Config.Hostname,
-		Status:   res.State.Status,
+		Status:   normalizeContainerStatus(res.State.Status),
 		Image:    res.Config.Image,
 	}
 
@@ -275,7 +282,7 @@ func (c *Client) ListContainers(ctx context.Context, filters []string) ([]provid
 		response = append(response, provider.ContainerInfo{
 			ID:     entry.ID,
 			Name:   entry.Names,
-			Status: entry.State,
+			Status: normalizeContainerStatus(entry.State),
 			Image:  entry.Image,
 		})
 	}
