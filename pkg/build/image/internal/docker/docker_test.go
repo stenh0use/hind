@@ -1,6 +1,9 @@
 package docker
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/apex/log"
@@ -196,6 +199,51 @@ func TestImageRef(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMetadataFilePath_UsesContextDirAndConstant(t *testing.T) {
+	logger := &log.Logger{Handler: discard.New()}
+	img := NewImage(logger, "docker.io/stenh0use/hind.consul", "test")
+	img.UpdateBuildOptions(&BuildOptions{ContextDir: filepath.Join("tmp", "build", "consul")})
+
+	got := img.metadataFilePath()
+	want := filepath.Join("tmp", "build", "consul", metadataFileName)
+	if got != want {
+		t.Fatalf("metadataFilePath() = %q, want %q", got, want)
+	}
+}
+
+func TestRefreshBuildMetadata_UsesPathJoinForMetadataFile(t *testing.T) {
+	logger := &log.Logger{Handler: discard.New()}
+	ctx := context.Background()
+
+	t.Run("reads metadata from nested context dir", func(t *testing.T) {
+		baseDir := t.TempDir()
+		contextDir := filepath.Join(baseDir, "cache", "hind", "consul")
+		if err := os.MkdirAll(contextDir, 0o755); err != nil {
+			t.Fatalf("failed to create context dir: %v", err)
+		}
+
+		metadataPath := filepath.Join(contextDir, "metadata.json")
+		metadataJSON := []byte(`{"containerimage.config.digest":"sha256:abc123","image.name":"docker.io/stenh0use/hind.consul:test"}`)
+		if err := os.WriteFile(metadataPath, metadataJSON, 0o644); err != nil {
+			t.Fatalf("failed to write metadata file: %v", err)
+		}
+
+		img := NewImage(logger, "docker.io/stenh0use/hind.consul", "test")
+		img.UpdateBuildOptions(&BuildOptions{ContextDir: contextDir})
+
+		metadata, err := img.RefreshBuildMetadata(ctx)
+		if err != nil {
+			t.Fatalf("RefreshBuildMetadata() error = %v", err)
+		}
+		if metadata.ContainerImageDigest != "sha256:abc123" {
+			t.Fatalf("ContainerImageDigest = %q, want %q", metadata.ContainerImageDigest, "sha256:abc123")
+		}
+		if metadata.ImageName != "docker.io/stenh0use/hind.consul:test" {
+			t.Fatalf("ImageName = %q, want %q", metadata.ImageName, "docker.io/stenh0use/hind.consul:test")
+		}
+	})
 }
 
 func TestNewImage(t *testing.T) {

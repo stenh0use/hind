@@ -9,12 +9,16 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/apex/log"
 )
 
-const defaultBuilder string = "buildx"
+const (
+	defaultBuilder   string = "buildx"
+	metadataFileName string = "metadata.json"
+)
 
 // Image holds options for building and running a Docker image using the Docker CLI.
 type Image struct {
@@ -86,13 +90,17 @@ func (i *Image) FormatBuildArgs() []string {
 	return args
 }
 
+func (i *Image) metadataFilePath() string {
+	return filepath.Join(i.BuildOptions.ContextDir, metadataFileName)
+}
+
 // RefreshBuildMetadata reads and parses the metadata.json file from disk, updating the cache
 func (i *Image) RefreshBuildMetadata(ctx context.Context) (*BuildMetadata, error) {
 	if i.BuildOptions == nil {
 		return nil, fmt.Errorf("build options not set: cannot read metadata file")
 	}
 
-	metadataFile := i.BuildOptions.ContextDir + "/metadata.json"
+	metadataFile := i.metadataFilePath()
 	data, err := os.ReadFile(metadataFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read metadata file %s: %w", metadataFile, err)
@@ -165,7 +173,7 @@ func (i *Image) buildCommand(ctx context.Context) *exec.Cmd {
 		"buildx",
 		"build",
 		"-t", i.imageRef(),
-		"--metadata-file", "metadata.json",
+		"--metadata-file", metadataFileName,
 	)
 
 	cmd.Dir = i.BuildOptions.ContextDir
