@@ -1,6 +1,8 @@
 package cluster
 
 import (
+	"context"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -340,5 +342,65 @@ func TestNewClusterConfig_UsesClientNodeFactory(t *testing.T) {
 		if got := client.Environment[key]; got != wantValue {
 			t.Fatalf("environment[%q] = %q, want %q", key, got, wantValue)
 		}
+	}
+}
+
+func TestSetClientCount_UsesClientNodeFactory(t *testing.T) {
+	version := release.Latest().Hind
+	clusterConfig := &config.Cluster{
+		Name:    "demo",
+		Version: version,
+		Network: config.Network{Name: "hind.demo"},
+		Nodes: []config.Node{
+			{Name: "hind.demo.consul.01", Role: config.Server},
+			{Name: "hind.demo.nomad.01", Role: config.Server},
+			{Name: "hind.demo.client.01", Role: config.Client},
+		},
+	}
+
+	m := &Manager{config: clusterConfig}
+
+	if err := m.SetClientCount(context.Background(), 2); err != nil {
+		t.Fatalf("SetClientCount() error = %v", err)
+	}
+
+	var clients []config.Node
+	for _, node := range m.config.Nodes {
+		if node.Role == config.Client {
+			clients = append(clients, node)
+		}
+	}
+
+	if len(clients) != 2 {
+		t.Fatalf("client node count = %d, want 2", len(clients))
+	}
+
+	expectedClients := []config.Node{
+		newNomadClientNode("demo", "hind.demo", version, 1),
+		newNomadClientNode("demo", "hind.demo", version, 2),
+	}
+
+	if !reflect.DeepEqual(clients, expectedClients) {
+		t.Fatalf("client nodes = %#v, want %#v", clients, expectedClients)
+	}
+
+	var nonClientNames []string
+	for _, node := range m.config.Nodes {
+		if node.Role != config.Client {
+			nonClientNames = append(nonClientNames, node.Name)
+		}
+	}
+
+	wantNonClientNames := []string{"hind.demo.consul.01", "hind.demo.nomad.01"}
+	if !reflect.DeepEqual(nonClientNames, wantNonClientNames) {
+		t.Fatalf("non-client names = %v, want %v", nonClientNames, wantNonClientNames)
+	}
+}
+
+func TestSetClientCount_RejectsCountBelowOne(t *testing.T) {
+	m := &Manager{config: &config.Cluster{Name: "demo"}}
+
+	if err := m.SetClientCount(context.Background(), 0); err == nil {
+		t.Fatal("SetClientCount() error = nil, want non-nil")
 	}
 }

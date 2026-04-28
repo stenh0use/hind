@@ -335,23 +335,7 @@ func (m *Manager) SetClientCount(ctx context.Context, count int) error {
 	}
 
 	for i := 0; i < count; i++ {
-		nomadClient := config.Node{
-			Name:    fmt.Sprintf("hind.%s.client.%.2d", name, i+1),
-			Kind:    config.NomadNode,
-			Role:    config.Client,
-			Network: m.config.Network.Name,
-			Image: config.Image{
-				Name: release.NomadClient.ImageName(),
-				Tag:  v.Hind,
-			},
-			Devices: []string{"/dev/fuse"},
-			Environment: map[string]string{
-				"CONSUL_AGENT_MODE":     "client",
-				"CONSUL_SERVER_ADDRESS": fmt.Sprintf("hind.%s.consul.%.2d", name, 1),
-				"NOMAD_AGENT_MODE":      "client",
-			},
-		}
-		newNodes = append(newNodes, nomadClient)
+		newNodes = append(newNodes, newNomadClientNode(name, m.config.Network.Name, v.Hind, i+1))
 	}
 
 	m.config.Nodes = newNodes
