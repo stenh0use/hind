@@ -15,92 +15,10 @@ import (
 	"github.com/stenh0use/hind/pkg/config"
 	"github.com/stenh0use/hind/pkg/file"
 	"github.com/stenh0use/hind/pkg/provider"
+	"github.com/stenh0use/hind/pkg/provider/mock"
 )
 
-type managerProviderStub struct {
-	createContainerFn  func(context.Context, config.Node) (string, error)
-	startContainerFn   func(context.Context, string) error
-	stopContainerFn    func(context.Context, string) error
-	deleteContainerFn  func(context.Context, string) error
-	inspectContainerFn func(context.Context, string) (*provider.ContainerInfo, error)
-	listContainersFn   func(context.Context, []string) ([]provider.ContainerInfo, error)
-	createNetworkFn    func(context.Context, config.Network) (string, error)
-	deleteNetworkFn    func(context.Context, string) error
-	listNetworksFn     func(context.Context, []string) ([]provider.NetworkInfo, error)
-	inspectNetworkFn   func(context.Context, string) (*provider.NetworkInfo, error)
-}
-
-func (s *managerProviderStub) CreateContainer(ctx context.Context, cfg config.Node) (string, error) {
-	if s.createContainerFn != nil {
-		return s.createContainerFn(ctx, cfg)
-	}
-	return "", nil
-}
-
-func (s *managerProviderStub) StartContainer(ctx context.Context, name string) error {
-	if s.startContainerFn != nil {
-		return s.startContainerFn(ctx, name)
-	}
-	return nil
-}
-
-func (s *managerProviderStub) StopContainer(ctx context.Context, name string) error {
-	if s.stopContainerFn != nil {
-		return s.stopContainerFn(ctx, name)
-	}
-	return nil
-}
-
-func (s *managerProviderStub) DeleteContainer(ctx context.Context, name string) error {
-	if s.deleteContainerFn != nil {
-		return s.deleteContainerFn(ctx, name)
-	}
-	return nil
-}
-
-func (s *managerProviderStub) InspectContainer(ctx context.Context, name string) (*provider.ContainerInfo, error) {
-	if s.inspectContainerFn != nil {
-		return s.inspectContainerFn(ctx, name)
-	}
-	return nil, nil
-}
-
-func (s *managerProviderStub) ListContainers(ctx context.Context, filters []string) ([]provider.ContainerInfo, error) {
-	if s.listContainersFn != nil {
-		return s.listContainersFn(ctx, filters)
-	}
-	return nil, nil
-}
-
-func (s *managerProviderStub) CreateNetwork(ctx context.Context, cfg config.Network) (string, error) {
-	if s.createNetworkFn != nil {
-		return s.createNetworkFn(ctx, cfg)
-	}
-	return "", nil
-}
-
-func (s *managerProviderStub) DeleteNetwork(ctx context.Context, name string) error {
-	if s.deleteNetworkFn != nil {
-		return s.deleteNetworkFn(ctx, name)
-	}
-	return nil
-}
-
-func (s *managerProviderStub) ListNetworks(ctx context.Context, filters []string) ([]provider.NetworkInfo, error) {
-	if s.listNetworksFn != nil {
-		return s.listNetworksFn(ctx, filters)
-	}
-	return nil, nil
-}
-
-func (s *managerProviderStub) InspectNetwork(ctx context.Context, name string) (*provider.NetworkInfo, error) {
-	if s.inspectNetworkFn != nil {
-		return s.inspectNetworkFn(ctx, name)
-	}
-	return nil, nil
-}
-
-func newManagerForBehaviorTests(t *testing.T, clusterName string, cfg *config.Cluster, stub provider.Client) *Manager {
+func newManagerForBehaviorTests(t *testing.T, clusterName string, cfg *config.Cluster, stub *mock.ClientStub) *Manager {
 	t.Helper()
 
 	root := t.TempDir()
@@ -121,7 +39,7 @@ func newManagerForBehaviorTests(t *testing.T, clusterName string, cfg *config.Cl
 func TestManagerStart_ReturnsErrorWhenPersistedConfigInvalid(t *testing.T) {
 	t.Parallel()
 
-	m := newManagerForBehaviorTests(t, "demo", &config.Cluster{Name: "demo"}, &managerProviderStub{})
+	m := newManagerForBehaviorTests(t, "demo", &config.Cluster{Name: "demo"}, &mock.ClientStub{})
 
 	if err := m.fm.WriteFile(m.configFile, []byte("{")); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
@@ -145,11 +63,11 @@ func TestManagerStart_UsesPersistedConfigForReconcile(t *testing.T) {
 	persistedOnlyNode := "hind.demo.client.03"
 	wantErr := errors.New("persisted node inspected")
 
-	stub := &managerProviderStub{
-		inspectNetworkFn: func(context.Context, string) (*provider.NetworkInfo, error) {
+	stub := &mock.ClientStub{
+		InspectNetworkFn: func(context.Context, string) (*provider.NetworkInfo, error) {
 			return &provider.NetworkInfo{Name: "hind.demo"}, nil
 		},
-		inspectContainerFn: func(_ context.Context, name string) (*provider.ContainerInfo, error) {
+		InspectContainerFn: func(_ context.Context, name string) (*provider.ContainerInfo, error) {
 			if name == persistedOnlyNode {
 				return nil, wantErr
 			}
@@ -194,7 +112,7 @@ func TestManagerStart_UsesPersistedConfigForReconcile(t *testing.T) {
 func TestManagerGet_ReturnsErrorWhenNoPersistedConfigAndNoDefaults(t *testing.T) {
 	t.Parallel()
 
-	m := newManagerForBehaviorTests(t, "demo", &config.Cluster{}, &managerProviderStub{})
+	m := newManagerForBehaviorTests(t, "demo", &config.Cluster{}, &mock.ClientStub{})
 
 	_, err := m.Get(context.Background())
 	if err == nil {
@@ -211,11 +129,11 @@ func TestManagerStop_ReturnsWrappedStopContainerError(t *testing.T) {
 	wantErr := errors.New("stop failed")
 	nodeName := "hind.demo.consul.01"
 
-	stub := &managerProviderStub{
-		inspectContainerFn: func(context.Context, string) (*provider.ContainerInfo, error) {
+	stub := &mock.ClientStub{
+		InspectContainerFn: func(context.Context, string) (*provider.ContainerInfo, error) {
 			return &provider.ContainerInfo{Name: nodeName, Status: provider.Running.String()}, nil
 		},
-		stopContainerFn: func(context.Context, string) error {
+		StopContainerFn: func(context.Context, string) error {
 			return wantErr
 		},
 	}
@@ -245,11 +163,11 @@ func TestManagerDelete_ReturnsWrappedStopContainerError(t *testing.T) {
 	wantErr := errors.New("stop failed")
 	nodeName := "hind.demo.consul.01"
 
-	stub := &managerProviderStub{
-		inspectContainerFn: func(context.Context, string) (*provider.ContainerInfo, error) {
+	stub := &mock.ClientStub{
+		InspectContainerFn: func(context.Context, string) (*provider.ContainerInfo, error) {
 			return &provider.ContainerInfo{Name: nodeName, Status: provider.Running.String()}, nil
 		},
-		stopContainerFn: func(context.Context, string) error {
+		StopContainerFn: func(context.Context, string) error {
 			return wantErr
 		},
 	}

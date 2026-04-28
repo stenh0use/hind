@@ -13,70 +13,8 @@ import (
 	"github.com/stenh0use/hind/pkg/config"
 	"github.com/stenh0use/hind/pkg/file"
 	"github.com/stenh0use/hind/pkg/provider"
+	"github.com/stenh0use/hind/pkg/provider/mock"
 )
-
-type stubProvider struct {
-	inspectNetworkFn   func(ctx context.Context, name string) (*provider.NetworkInfo, error)
-	inspectContainerFn func(ctx context.Context, name string) (*provider.ContainerInfo, error)
-	stopContainerFn    func(ctx context.Context, name string) error
-	deleteContainerFn  func(ctx context.Context, name string) error
-	deleteNetworkFn    func(ctx context.Context, name string) error
-}
-
-func (s *stubProvider) CreateContainer(ctx context.Context, cfg config.Node) (string, error) {
-	return "", nil
-}
-
-func (s *stubProvider) StartContainer(ctx context.Context, name string) error {
-	return nil
-}
-
-func (s *stubProvider) StopContainer(ctx context.Context, name string) error {
-	if s.stopContainerFn != nil {
-		return s.stopContainerFn(ctx, name)
-	}
-	return nil
-}
-
-func (s *stubProvider) DeleteContainer(ctx context.Context, name string) error {
-	if s.deleteContainerFn != nil {
-		return s.deleteContainerFn(ctx, name)
-	}
-	return nil
-}
-
-func (s *stubProvider) InspectContainer(ctx context.Context, name string) (*provider.ContainerInfo, error) {
-	if s.inspectContainerFn != nil {
-		return s.inspectContainerFn(ctx, name)
-	}
-	return nil, nil
-}
-
-func (s *stubProvider) ListContainers(ctx context.Context, filters []string) ([]provider.ContainerInfo, error) {
-	return nil, nil
-}
-
-func (s *stubProvider) CreateNetwork(ctx context.Context, cfg config.Network) (string, error) {
-	return "", nil
-}
-
-func (s *stubProvider) DeleteNetwork(ctx context.Context, name string) error {
-	if s.deleteNetworkFn != nil {
-		return s.deleteNetworkFn(ctx, name)
-	}
-	return nil
-}
-
-func (s *stubProvider) ListNetworks(ctx context.Context, filters []string) ([]provider.NetworkInfo, error) {
-	return nil, nil
-}
-
-func (s *stubProvider) InspectNetwork(ctx context.Context, name string) (*provider.NetworkInfo, error) {
-	if s.inspectNetworkFn != nil {
-		return s.inspectNetworkFn(ctx, name)
-	}
-	return nil, nil
-}
 
 func TestManagerGet_NetworkNotFoundDoesNotPanic(t *testing.T) {
 	t.Parallel()
@@ -104,11 +42,11 @@ func TestManagerGet_NetworkNotFoundDoesNotPanic(t *testing.T) {
 	}
 
 	m := &Manager{
-		provider: &stubProvider{
-			inspectNetworkFn: func(ctx context.Context, name string) (*provider.NetworkInfo, error) {
+		provider: &mock.ClientStub{
+			InspectNetworkFn: func(ctx context.Context, name string) (*provider.NetworkInfo, error) {
 				return nil, nil
 			},
-			inspectContainerFn: func(ctx context.Context, name string) (*provider.ContainerInfo, error) {
+			InspectContainerFn: func(ctx context.Context, name string) (*provider.ContainerInfo, error) {
 				return nil, nil
 			},
 		},
@@ -143,8 +81,8 @@ func TestManagerGet_ReturnsInspectNetworkError(t *testing.T) {
 
 	wantErr := errors.New("docker daemon unavailable")
 	m := &Manager{
-		provider: &stubProvider{
-			inspectNetworkFn: func(ctx context.Context, name string) (*provider.NetworkInfo, error) {
+		provider: &mock.ClientStub{
+			InspectNetworkFn: func(ctx context.Context, name string) (*provider.NetworkInfo, error) {
 				return nil, wantErr
 			},
 		},
@@ -171,11 +109,11 @@ func TestManagerGet_ReturnsInspectContainerError(t *testing.T) {
 
 	wantErr := errors.New("inspect container failed")
 	m := &Manager{
-		provider: &stubProvider{
-			inspectNetworkFn: func(ctx context.Context, name string) (*provider.NetworkInfo, error) {
+		provider: &mock.ClientStub{
+			InspectNetworkFn: func(ctx context.Context, name string) (*provider.NetworkInfo, error) {
 				return &provider.NetworkInfo{Name: name}, nil
 			},
-			inspectContainerFn: func(ctx context.Context, name string) (*provider.ContainerInfo, error) {
+			InspectContainerFn: func(ctx context.Context, name string) (*provider.ContainerInfo, error) {
 				return nil, wantErr
 			},
 		},
@@ -231,11 +169,11 @@ func TestManagerGet_UsesPersistedTopology(t *testing.T) {
 
 	inspected := []string{}
 	m := &Manager{
-		provider: &stubProvider{
-			inspectNetworkFn: func(ctx context.Context, name string) (*provider.NetworkInfo, error) {
+		provider: &mock.ClientStub{
+			InspectNetworkFn: func(ctx context.Context, name string) (*provider.NetworkInfo, error) {
 				return &provider.NetworkInfo{Name: name}, nil
 			},
-			inspectContainerFn: func(ctx context.Context, name string) (*provider.ContainerInfo, error) {
+			InspectContainerFn: func(ctx context.Context, name string) (*provider.ContainerInfo, error) {
 				inspected = append(inspected, name)
 				return &provider.ContainerInfo{Name: name, Status: provider.Running.String()}, nil
 			},
@@ -304,11 +242,11 @@ func TestManagerStop_UsesPersistedTopology(t *testing.T) {
 	stopped := []string{}
 	m := &Manager{
 		logger: &log.Logger{Handler: discard.New(), Level: log.ErrorLevel},
-		provider: &stubProvider{
-			inspectContainerFn: func(ctx context.Context, name string) (*provider.ContainerInfo, error) {
+		provider: &mock.ClientStub{
+			InspectContainerFn: func(ctx context.Context, name string) (*provider.ContainerInfo, error) {
 				return &provider.ContainerInfo{Name: name, Status: provider.Running.String()}, nil
 			},
-			stopContainerFn: func(ctx context.Context, name string) error {
+			StopContainerFn: func(ctx context.Context, name string) error {
 				stopped = append(stopped, name)
 				return nil
 			},
@@ -374,8 +312,8 @@ func TestManagerStop_PropagatesInspectContainerError(t *testing.T) {
 	wantErr := errors.New("container inspect failed")
 	m := &Manager{
 		logger: &log.Logger{Handler: discard.New(), Level: log.ErrorLevel},
-		provider: &stubProvider{
-			inspectContainerFn: func(ctx context.Context, name string) (*provider.ContainerInfo, error) {
+		provider: &mock.ClientStub{
+			InspectContainerFn: func(ctx context.Context, name string) (*provider.ContainerInfo, error) {
 				// Return nil info with a real error (e.g. docker daemon error)
 				return nil, wantErr
 			},
@@ -408,8 +346,8 @@ func TestManagerDelete_PropagatesInspectContainerError(t *testing.T) {
 	wantErr := errors.New("container inspect failed")
 	m := &Manager{
 		logger: &log.Logger{Handler: discard.New(), Level: log.ErrorLevel},
-		provider: &stubProvider{
-			inspectContainerFn: func(ctx context.Context, name string) (*provider.ContainerInfo, error) {
+		provider: &mock.ClientStub{
+			InspectContainerFn: func(ctx context.Context, name string) (*provider.ContainerInfo, error) {
 				// Return nil info with a real error (e.g. docker daemon error)
 				return nil, wantErr
 			},
@@ -444,12 +382,12 @@ func TestManagerDelete_PropagatesInspectNetworkError(t *testing.T) {
 	wantErr := errors.New("network inspect failed")
 	m := &Manager{
 		logger: &log.Logger{Handler: discard.New(), Level: log.ErrorLevel},
-		provider: &stubProvider{
-			inspectContainerFn: func(ctx context.Context, name string) (*provider.ContainerInfo, error) {
+		provider: &mock.ClientStub{
+			InspectContainerFn: func(ctx context.Context, name string) (*provider.ContainerInfo, error) {
 				// Container does not exist — nil, nil is the not-found signal
 				return nil, nil
 			},
-			inspectNetworkFn: func(ctx context.Context, name string) (*provider.NetworkInfo, error) {
+			InspectNetworkFn: func(ctx context.Context, name string) (*provider.NetworkInfo, error) {
 				// Return nil info with a real error
 				return nil, wantErr
 			},
