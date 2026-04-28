@@ -456,7 +456,6 @@ func (m *Manager) Scale(ctx context.Context, targetClientCount int) error {
 func (m *Manager) addClientNodes(count int) error {
 	m.logger.Debugf("Adding %d client node configs", count)
 
-	currentClientCount := m.CountClientNodes()
 	v, err := release.Get(m.config.Version)
 	if err != nil {
 		return fmt.Errorf("failed to get version: %w", err)
@@ -465,24 +464,8 @@ func (m *Manager) addClientNodes(count int) error {
 	name := m.config.Name
 
 	for i := 0; i < count; i++ {
-		nodeNum := currentClientCount + i + 1
-		nomadClient := config.Node{
-			Name:    fmt.Sprintf("hind.%s.client.%.2d", name, nodeNum),
-			Kind:    config.NomadNode,
-			Role:    config.Client,
-			Network: m.config.Network.Name,
-			Image: config.Image{
-				Name: release.NomadClient.ImageName(),
-				Tag:  v.Hind,
-			},
-			Devices: []string{"/dev/fuse"},
-			Environment: map[string]string{
-				"CONSUL_AGENT_MODE":     "client",
-				"CONSUL_SERVER_ADDRESS": fmt.Sprintf("hind.%s.consul.%.2d", name, 1),
-				"NOMAD_AGENT_MODE":      "client",
-			},
-		}
-		m.config.Nodes = append(m.config.Nodes, nomadClient)
+		nodeNum := nextClientNodeNumber(name, m.config.Nodes)
+		m.config.Nodes = append(m.config.Nodes, newNomadClientNode(name, m.config.Network.Name, v.Hind, nodeNum))
 	}
 
 	return nil

@@ -2,6 +2,8 @@ package cluster
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/stenh0use/hind/pkg/build/release"
 	"github.com/stenh0use/hind/pkg/config"
@@ -13,6 +15,64 @@ const (
 	DefaultNomadClients  = 1
 	DefaultVaultServers  = 1
 )
+
+func newNomadClientNode(clusterName, networkName, version string, nodeNumber int) config.Node {
+	return config.Node{
+		Name:    fmt.Sprintf("hind.%s.client.%.2d", clusterName, nodeNumber),
+		Kind:    config.NomadNode,
+		Role:    config.Client,
+		Network: networkName,
+		Image: config.Image{
+			Name: release.NomadClient.ImageName(),
+			Tag:  version,
+		},
+		Devices: []string{"/dev/fuse"},
+		Environment: map[string]string{
+			"CONSUL_AGENT_MODE":     "client",
+			"CONSUL_SERVER_ADDRESS": fmt.Sprintf("hind.%s.consul.%.2d", clusterName, 1),
+			"NOMAD_AGENT_MODE":      "client",
+		},
+	}
+}
+
+func parseClientNodeNumber(clusterName, nodeName string) (int, bool) {
+	prefix := fmt.Sprintf("hind.%s.client.", clusterName)
+	if !strings.HasPrefix(nodeName, prefix) {
+		return 0, false
+	}
+
+	suffix := strings.TrimPrefix(nodeName, prefix)
+	if suffix == "" {
+		return 0, false
+	}
+
+	number, err := strconv.Atoi(suffix)
+	if err != nil || number < 1 {
+		return 0, false
+	}
+
+	return number, true
+}
+
+func nextClientNodeNumber(clusterName string, nodes []config.Node) int {
+	maxNodeNumber := 0
+	for _, node := range nodes {
+		if node.Role != config.Client {
+			continue
+		}
+
+		number, ok := parseClientNodeNumber(clusterName, node.Name)
+		if !ok {
+			continue
+		}
+
+		if number > maxNodeNumber {
+			maxNodeNumber = number
+		}
+	}
+
+	return maxNodeNumber + 1
+}
 
 // StartResult indicates the outcome of a cluster start operation
 type StartResult int
@@ -92,23 +152,7 @@ func newClusterConfig(name string, version string) (*config.Cluster, error) {
 	}
 
 	for count := range DefaultNomadClients {
-		nomadClient := config.Node{
-			Name:    fmt.Sprintf("hind.%s.client.%.2d", name, count+1),
-			Kind:    config.NomadNode,
-			Role:    config.Client,
-			Network: networkName,
-			Image: config.Image{
-				Name: release.NomadClient.ImageName(),
-				Tag:  v.Hind,
-			},
-			Devices: []string{"/dev/fuse"},
-			Environment: map[string]string{
-				"CONSUL_AGENT_MODE":     "client",
-				"CONSUL_SERVER_ADDRESS": fmt.Sprintf("hind.%s.consul.%.2d", name, 1),
-				"NOMAD_AGENT_MODE":      "client",
-			},
-		}
-		nodes = append(nodes, nomadClient)
+		nodes = append(nodes, newNomadClientNode(name, networkName, v.Hind, count+1))
 	}
 
 	for count := range DefaultVaultServers {
