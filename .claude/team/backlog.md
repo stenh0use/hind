@@ -7,16 +7,6 @@ Closed items were moved to:
 
 ## Active items
 
-### BL-012 — Preserve proven architecture patterns during refactors
-- **Priority**: P3
-- **Size**: S
-- **Source**: Staff
-- **Maps to QA bugs**: none direct
-- **Problem**: quality fixes may accidentally erode strong current architecture traits.
-- **Reviewer direction to preserve**: maintain clear layering, IOStreams abstraction, and reconcile-plan execution model.
-- **Expected outcome**: defects reduced without degrading modularity and maintainability.
-- **References**: [R-012](./refs.md#r-012-architectural-strengths-to-preserve-while-refactoring)
-
 ### BL-013 — Define migration requirements from `internal/docker` to `pkg/provider` in image builds
 - **Priority**: P2
 - **Size**: M
@@ -28,6 +18,8 @@ Closed items were moved to:
   - define the provider interfaces/adapters needed to replace each usage.
   - estimate migration work by component/call path, including sequencing and blockers.
   - produce migration guidance for non-conforming call paths and test updates.
+- **Canonical spec**: `.claude/team/hind/spec-BL-013.md`
+
 
 ### BL-014 — Define release versioning requirements with discoverable versions
 - **Priority**: P1
@@ -40,15 +32,24 @@ Closed items were moved to:
   - define schema/API for available versions and selected versions.
   - define CLI UX for listing and choosing versions.
   - document validation/error behavior for unsupported version inputs.
+- **Canonical spec**: `.claude/team/hind/spec-BL-014.md`
 
-### BL-015 — Audit feature specs versus implementation status
+### BL-017 — Close hind-stop.feature behavior gaps (force/verbose/partial failure/idempotent contracts)
+- **Priority**: P2
+- **Size**: L
+- **Source**: BL-015 audit (`.claude/team/hind/spec-BL-015.md`)
+- **Problem**: `hind-stop.feature` scenarios for force stop, verbose progress, partial-stop warnings, already-stopped messaging, and unhealthy-container handling are not fully implemented.
+- **Expected outcome**: `hind stop` behavior and tests match `hind-stop.feature` scenarios:
+  - "Stop command is idempotent when cluster already stopped"
+  - "Stop with force flag kills containers immediately"
+  - "Stop with verbose flag shows detailed progress"
+
+### BL-019 — Enforce default-cluster.feature profile-selection contracts
 - **Priority**: P2
 - **Size**: M
-- **Source**: User
-- **Problem**: status of feature specs under `.claude/team/features/` is unknown.
-- **Expected outcome**: implementation matrix for all feature specs and backlog coverage for any missing work.
-- **Scope**: `hind-releases.feature`, `hind-build.feature`, `default-cluster.feature`, `hind-start.feature`, `hind-stop.feature`.
-- **Acceptance criteria**:
-  - assess each feature spec as implemented, partially implemented, or not implemented.
-  - add backlog follow-up items for any gaps found.
-  - link each follow-up item back to the specific feature spec and scenario(s).
+- **Source**: BL-015 audit (`.claude/team/hind/spec-BL-015.md`)
+- **Problem**: active-profile commands do not enforce cluster-existence checks and delete/rm active-profile reset semantics are not aligned with the feature spec.
+- **Expected outcome**: CLI behavior and tests match `default-cluster.feature` scenarios:
+  - "hind set profile [name]" when cluster exists
+  - "hind set profile [name]" when cluster does not exist
+  - active-profile reset behavior on cluster removal command alignment (`delete` vs `rm`)
