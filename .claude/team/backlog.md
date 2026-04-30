@@ -1,5 +1,14 @@
 # Team Backlog — RE-001 (Staff + QA Consolidation)
 
+## Closed-status update (2026-04-30)
+
+The remediation backlog captured here has been completed and archived into runtime closeout artifacts.
+
+- Closed work items: BL-001 through BL-011, BL-013 through BL-027
+- Ongoing sustainment item: BL-012 (tracked in active runtime queue)
+- Closed bug items previously tracked in runtime state have been archived under `.claude/team/hind/archive/`
+
+
 This backlog consolidates the completed Staff Engineer and QA Engineer reviews for work item `RE-001`, preserving reviewer intent, severity judgments, and implementation direction.
 
 - Staff verdict: **changes requested** (critical correctness/security blockers before sign-off).
