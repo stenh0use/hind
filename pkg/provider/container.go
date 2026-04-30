@@ -17,8 +17,4 @@ type ContainerInfo struct {
 	Image    string
 	Ports    []string
 	Labels   map[string]string
-	Network  string
-	Address  string
 }
-
-type ContainerSummary struct{}

@@ -249,8 +249,8 @@ func (m *Manager) Delete(ctx context.Context) error {
 	return nil
 }
 
-func (m *Manager) Get(ctx context.Context) (*provider.ClusterInfo, error) {
-	state := &provider.ClusterInfo{}
+func (m *Manager) Get(ctx context.Context) (*ClusterInfo, error) {
+	state := &ClusterInfo{}
 
 	if err := m.LoadPersistedConfig(); err != nil {
 		return nil, err

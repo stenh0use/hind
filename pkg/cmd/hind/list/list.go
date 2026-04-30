@@ -133,7 +133,7 @@ func getClusterStatus(ctx context.Context, logger *log.Logger, clusterName strin
 }
 
 // aggregateClusterStatus computes cluster-level status from container statuses
-func aggregateClusterStatus(info *provider.ClusterInfo, cfg *config.Cluster) *clusterStatus {
+func aggregateClusterStatus(info *cluster.ClusterInfo, cfg *config.Cluster) *clusterStatus {
 	status := &clusterStatus{
 		TotalNodes: len(cfg.Nodes),
 	}
