@@ -68,7 +68,7 @@ func TestCreateContainer_UsesImageNameWhenTagAndDigestUnset(t *testing.T) {
 		},
 	}
 
-	if _, err := c.CreateContainer(context.Background(), cfg); err != nil {
+	if _, err := c.CreateContainer(context.Background(), provider.ContainerSpecFromNode(cfg)); err != nil {
 		t.Fatalf("CreateContainer() error = %v", err)
 	}
 

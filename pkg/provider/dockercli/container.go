@@ -12,7 +12,6 @@ import (
 	"github.com/apex/log"
 	"github.com/moby/moby/api/types/container"
 
-	"github.com/stenh0use/hind/pkg/config"
 	"github.com/stenh0use/hind/pkg/provider"
 )
 
@@ -30,7 +29,7 @@ func normalizeContainerStatus(status string) string {
 }
 
 // Create and start a container
-func (c *Client) CreateContainer(ctx context.Context, cfg config.Node) (string, error) {
+func (c *Client) CreateContainer(ctx context.Context, cfg provider.ContainerSpec) (string, error) {
 	if cfg.Name == "" {
 		return "", fmt.Errorf("name is required to create a container")
 	}

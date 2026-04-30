@@ -9,19 +9,22 @@ import (
 
 // ClientStub is a stub implementation of provider.Client for testing.
 type ClientStub struct {
-	CreateContainerFn  func(context.Context, config.Node) (string, error)
+	CreateContainerFn  func(context.Context, provider.ContainerSpec) (string, error)
 	StartContainerFn   func(context.Context, string) error
 	StopContainerFn    func(context.Context, string) error
 	DeleteContainerFn  func(context.Context, string) error
 	InspectContainerFn func(context.Context, string) (*provider.ContainerInfo, error)
 	ListContainersFn   func(context.Context, []string) ([]provider.ContainerInfo, error)
+	BuildImageFn       func(context.Context, provider.BuildImageOptions) (string, error)
+	TagExistsFn        func(context.Context, string, string) (bool, error)
+	PullImageFn        func(context.Context, string, string) error
 	CreateNetworkFn    func(context.Context, config.Network) (string, error)
 	DeleteNetworkFn    func(context.Context, string) error
 	ListNetworksFn     func(context.Context, []string) ([]provider.NetworkInfo, error)
 	InspectNetworkFn   func(context.Context, string) (*provider.NetworkInfo, error)
 }
 
-func (c *ClientStub) CreateContainer(ctx context.Context, cfg config.Node) (string, error) {
+func (c *ClientStub) CreateContainer(ctx context.Context, cfg provider.ContainerSpec) (string, error) {
 	if c.CreateContainerFn != nil {
 		return c.CreateContainerFn(ctx, cfg)
 	}
@@ -61,6 +64,27 @@ func (c *ClientStub) ListContainers(ctx context.Context, filters []string) ([]pr
 		return c.ListContainersFn(ctx, filters)
 	}
 	return nil, nil
+}
+
+func (c *ClientStub) BuildImage(ctx context.Context, opts provider.BuildImageOptions) (string, error) {
+	if c.BuildImageFn != nil {
+		return c.BuildImageFn(ctx, opts)
+	}
+	return "", nil
+}
+
+func (c *ClientStub) TagExists(ctx context.Context, name string, tag string) (bool, error) {
+	if c.TagExistsFn != nil {
+		return c.TagExistsFn(ctx, name, tag)
+	}
+	return false, nil
+}
+
+func (c *ClientStub) PullImage(ctx context.Context, name string, tag string) error {
+	if c.PullImageFn != nil {
+		return c.PullImageFn(ctx, name, tag)
+	}
+	return nil
 }
 
 func (c *ClientStub) CreateNetwork(ctx context.Context, cfg config.Network) (string, error) {

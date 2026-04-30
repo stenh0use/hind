@@ -9,7 +9,7 @@ import (
 type Client interface {
 	// Container methods
 	// Create and start a node
-	CreateContainer(ctx context.Context, cfg config.Node) (string, error)
+	CreateContainer(ctx context.Context, cfg ContainerSpec) (string, error)
 	// Start a node if it is stopped
 	StartContainer(ctx context.Context, name string) error
 	// Stop a node if it is running
@@ -20,6 +20,11 @@ type Client interface {
 	InspectContainer(ctx context.Context, name string) (*ContainerInfo, error)
 	// List nodes
 	ListContainers(ctx context.Context, filters []string) ([]ContainerInfo, error)
+
+	// Image methods
+	BuildImage(ctx context.Context, opts BuildImageOptions) (string, error)
+	TagExists(ctx context.Context, name string, tag string) (bool, error)
+	PullImage(ctx context.Context, name string, tag string) error
 
 	// Network methods
 	// Create a new docker network
