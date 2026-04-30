@@ -11,7 +11,7 @@
 | BL-006 | Normalize status mapping (`exited`/`stopped`) in list aggregation | team-lead | Completed | BL-003 |
 | BL-007 | Correct `hind get` status/ports rendering | engineer | Completed | BL-001 |
 | BL-008 | Make first-run `hind list` return empty-state success | engineer-C | Completed | BL-001 |
-| BL-009 | Tighten provider/data-structure shaping and boundary clarity | unassigned | Todo | BL-003, BL-004, BL-006, BL-007 |
+| BL-009 | Tighten provider/data-structure shaping and boundary clarity | engineer | Completed | BL-003, BL-004, BL-006, BL-007 |
 | BL-010 | Deepen behavioral/error-path test coverage in critical flows | unassigned | Completed | BL-001, BL-002, BL-003, BL-004 |
 | BL-011 | Align docs/comments with runtime behavior | unassigned | Todo | BL-005, BL-006, BL-007 |
 | BL-012 | Preserve architecture patterns during refactors | team-lead | Ongoing | None |
