@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,11 +23,196 @@ const (
 
 // Image holds options for building and running a Docker image using the Docker CLI.
 type Image struct {
-	Name         string         // Name of the image to build
-	Tag          string         // Tag part of Name:tag for the built image
-	logger       *log.Logger    // Logger for build output
-	BuildOptions *BuildOptions  // Options for building the image (nil if not building)
-	metadata     *BuildMetadata // Cached metadata about built image
+	Name         string          // Name of the image to build
+	Tag          string          // Tag part of Name:tag for the built image
+	logger       *log.Logger     // Logger for build output
+	BuildOptions *BuildOptions   // Options for building the image (nil if not building)
+	metadata     *BuildMetadata  // Cached metadata about built image
+	executor     CommandExecutor // Command execution seam for tests
+}
+
+// CommandExecutor abstracts command execution for Docker operations.
+type CommandExecutor interface {
+	Run(ctx context.Context, dir string, stdout, stderr io.Writer, name string, args ...string) error
+	Output(ctx context.Context, dir string, name string, args ...string) ([]byte, error)
+	CommandString(name string, args ...string) string
+}
+
+type osCommandExecutor struct{}
+
+func (osCommandExecutor) Run(ctx context.Context, dir string, stdout, stderr io.Writer, name string, args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = dir
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	return cmd.Run()
+}
+
+func (osCommandExecutor) Output(ctx context.Context, dir string, name string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = dir
+	return cmd.Output()
+}
+
+func (osCommandExecutor) CommandString(name string, args ...string) string {
+	cmd := exec.Command(name, args...)
+	return cmd.String()
+}
+
+var defaultCommandExecutor CommandExecutor = osCommandExecutor{}
+
+func (i *Image) getExecutor() CommandExecutor {
+	if i.executor != nil {
+		return i.executor
+	}
+	return defaultCommandExecutor
+}
+
+func commandToString(name string, args ...string) string {
+	return defaultCommandExecutor.CommandString(name, args...)
+}
+
+func outputWithExecutor(ctx context.Context, executor CommandExecutor, dir string, name string, args ...string) ([]byte, error) {
+	if executor == nil {
+		executor = defaultCommandExecutor
+	}
+	return executor.Output(ctx, dir, name, args...)
+}
+
+func checkDependenciesWithExecutor(ctx context.Context, executor CommandExecutor) error {
+	if executor == nil {
+		executor = defaultCommandExecutor
+	}
+
+	raw, err := outputWithExecutor(ctx, executor, "", "docker", "system", "info", "--format", "{{json .}}")
+	if err != nil {
+		return fmt.Errorf("failed to get docker system info: %w", err)
+	}
+
+	info := DockerInfo{}
+	if err := json.Unmarshal(raw, &info); err != nil {
+		return fmt.Errorf("failed to parse docker system info: %w", err)
+	}
+
+	if !info.HasClientPlugin(defaultBuilder) {
+		return fmt.Errorf("%s client plugin is needed but not installed", defaultBuilder)
+	}
+
+	return nil
+}
+
+func runWithExecutor(ctx context.Context, executor CommandExecutor, dir string, stdout, stderr io.Writer, name string, args ...string) error {
+	if executor == nil {
+		executor = defaultCommandExecutor
+	}
+	return executor.Run(ctx, dir, stdout, stderr, name, args...)
+}
+
+func runAndCapture(ctx context.Context, executor CommandExecutor, dir string, name string, args ...string) (string, string, error) {
+	var stdout, stderr strings.Builder
+	err := runWithExecutor(ctx, executor, dir, &stdout, &stderr, name, args...)
+	return stdout.String(), stderr.String(), err
+}
+
+func (i *Image) buildCommandArgs() []string {
+	args := []string{
+		"buildx",
+		"build",
+		"-t", i.imageRef(),
+		"--metadata-file", metadataFileName,
+	}
+
+	if i.BuildOptions.Dockerfile != "" {
+		args = append(args, "-f", i.BuildOptions.Dockerfile)
+	}
+
+	if !i.BuildOptions.WithCache {
+		args = append(args, "--no-cache")
+	}
+
+	if i.BuildOptions.Platform != "" {
+		args = append(args, "--platform", i.BuildOptions.Platform)
+	}
+
+	args = append(args, i.FormatBuildArgs()...)
+	args = append(args, ".")
+	return args
+}
+
+func (i *Image) buildCommandString() string {
+	return commandToString("docker", i.buildCommandArgs()...)
+}
+
+func (i *Image) runBuildCommand(ctx context.Context, executor CommandExecutor) (string, string, error) {
+	return runAndCapture(ctx, executor, i.BuildOptions.ContextDir, "docker", i.buildCommandArgs()...)
+}
+
+func (i *Image) runTagExistsCommand(ctx context.Context, executor CommandExecutor) (string, string, error) {
+	return runAndCapture(ctx, executor, "", "docker", "images", "-q", i.imageRef())
+}
+
+func (i *Image) checkDependencies(ctx context.Context) error {
+	return checkDependenciesWithExecutor(ctx, defaultCommandExecutor)
+}
+
+func (i *Image) executeBuild(ctx context.Context, executor CommandExecutor) (string, error) {
+	stdout, stderr, err := i.runBuildCommand(ctx, executor)
+	if err != nil {
+		i.logger.WithFields(log.Fields{"stdout": stdout, "stderr": stderr, "error": err}).Debug("failed to build image")
+		return "", fmt.Errorf("failed to build image: %w: %s", err, stderr)
+	}
+	return stdout, nil
+}
+
+func (i *Image) executeTagExists(ctx context.Context, executor CommandExecutor) (bool, error) {
+	stdout, stderr, err := i.runTagExistsCommand(ctx, executor)
+	if err != nil {
+		return false, fmt.Errorf("failed to check if tag exists: %w: %s", err, stderr)
+	}
+	return strings.TrimSpace(stdout) != "", nil
+}
+
+func (i *Image) logBuildStart() {
+	i.logger.WithFields(log.Fields{"name": i.Name, "tag": i.Tag}).Info("Building image")
+}
+
+func (i *Image) logBuildCommand() {
+	i.logger.WithField("command", i.buildCommandString()).Debug("Running Docker build command")
+}
+
+func (i *Image) logBuildSuccess() {
+	i.logger.WithFields(log.Fields{"name": i.Name, "tag": i.Tag}).Info("Successfully built image")
+}
+
+func (i *Image) buildAndResolveDigest(ctx context.Context, executor CommandExecutor) (string, error) {
+	if _, err := i.executeBuild(ctx, executor); err != nil {
+		return "", err
+	}
+	return i.getImageDigest(ctx)
+}
+
+func (i *Image) verifyBuildPreconditions(ctx context.Context, executor CommandExecutor) error {
+	if err := i.checkDependencies(ctx); err != nil {
+		return fmt.Errorf("failed to build image %s:%s: %w", i.Name, i.Tag, err)
+	}
+	if i.BuildOptions == nil {
+		return fmt.Errorf("build options not set: cannot build image")
+	}
+	return nil
+}
+
+func (i *Image) buildImageWithExecutor(ctx context.Context, executor CommandExecutor) (string, error) {
+	if err := i.verifyBuildPreconditions(ctx, executor); err != nil {
+		return "", err
+	}
+	i.logBuildStart()
+	i.logBuildCommand()
+	digest, err := i.buildAndResolveDigest(ctx, executor)
+	if err != nil {
+		return "", err
+	}
+	i.logBuildSuccess()
+	return digest, nil
 }
 
 type BuildOptions struct {
@@ -128,72 +314,12 @@ func (i *Image) GetBuildMetadata(ctx context.Context) (*BuildMetadata, error) {
 }
 
 func (i *Image) BuildImage(ctx context.Context) (string, error) {
-	if err := checkDependencies(ctx); err != nil {
-		return "", fmt.Errorf("failed to build image %s:%s: %w", i.Name, i.Tag, err)
-	}
-
-	if i.BuildOptions == nil {
-		return "", fmt.Errorf("build options not set: cannot build image")
-	}
-
-	i.logger.WithFields(log.Fields{"name": i.Name, "tag": i.Tag}).Info("Building image")
-
-	cmd := i.buildCommand(ctx)
-
-	i.logger.WithField("command", cmd.String()).Debug("Running Docker build command")
-
-	var stdout, stderr strings.Builder
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		i.logger.WithFields(log.Fields{
-			"stdout": stdout.String(),
-			"stderr": stderr.String(),
-			"error":  err,
-		}).Debug("failed to build image")
-		return "", fmt.Errorf("failed to build image: %w: %s", err, stderr.String())
-	}
-
-	i.logger.WithFields(log.Fields{"name": i.Name, "tag": i.Tag}).Info("Successfully built image")
-
-	return i.getImageDigest(ctx)
+	return i.buildImageWithExecutor(ctx, i.getExecutor())
 }
 
 // imageRef constructs the full image name
 func (i *Image) imageRef() string {
 	return fmt.Sprintf("%s:%s", i.Name, i.Tag)
-}
-
-// buildCommand creates the docker buildx command with all options
-func (i *Image) buildCommand(ctx context.Context) *exec.Cmd {
-	cmd := exec.CommandContext(
-		ctx,
-		"docker",
-		"buildx",
-		"build",
-		"-t", i.imageRef(),
-		"--metadata-file", metadataFileName,
-	)
-
-	cmd.Dir = i.BuildOptions.ContextDir
-
-	if i.BuildOptions.Dockerfile != "" {
-		cmd.Args = append(cmd.Args, "-f", i.BuildOptions.Dockerfile)
-	}
-
-	if !i.BuildOptions.WithCache {
-		cmd.Args = append(cmd.Args, "--no-cache")
-	}
-
-	if i.BuildOptions.Platform != "" {
-		cmd.Args = append(cmd.Args, "--platform", i.BuildOptions.Platform)
-	}
-
-	cmd.Args = append(cmd.Args, i.FormatBuildArgs()...)
-	cmd.Args = append(cmd.Args, ".")
-
-	return cmd
 }
 
 // getImageDigest retrieves and logs the built image digest
@@ -208,32 +334,9 @@ func (i *Image) getImageDigest(ctx context.Context) (string, error) {
 }
 
 func (i *Image) TagExists(ctx context.Context) (bool, error) {
-	cmd := exec.CommandContext(ctx, "docker", "images", "-q", i.imageRef())
-	var stdout, stderr strings.Builder
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return false, fmt.Errorf("failed to check if tag exists: %w: %s", err, stderr.String())
-	}
-	return strings.TrimSpace(stdout.String()) != "", nil
+	return i.executeTagExists(ctx, i.getExecutor())
 }
 
 func checkDependencies(ctx context.Context) error {
-	info := DockerInfo{}
-	if err := info.Get(ctx); err != nil {
-		return fmt.Errorf("failed to get docker system info: %w", err)
-	}
-
-	if !info.HasClientPlugin(defaultBuilder) {
-		return fmt.Errorf("%s client plugin is needed but not installed", defaultBuilder)
-	}
-
-	// This is only required for multi platform builds
-	// const snapshotter = "io.containerd.snapshotter.v1"
-	// if !info.HasDriverType(snapshotter) {
-	// 	return fmt.Errorf("'%s' driver is needed but not configured", snapshotter)
-	// }
-
-	return nil
+	return checkDependenciesWithExecutor(ctx, defaultCommandExecutor)
 }

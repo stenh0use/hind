@@ -26,7 +26,7 @@
 | BL-021 | Remove or implement dockercli/build.go stub (no-op BuildImage) | unassigned | Todo | BL-020 |
 | BL-022 | Prune spurious fields from NetworkInfo; remove empty ContainerSummary/NetworkSummary types | unassigned | Todo | BL-015 |
 | BL-023 | Add executor seam to internal/docker for unit testing BuildImage/TagExists/checkDependencies | unassigned | Todo | None |
-| BL-024 | Harden metadata file path in build/image: use filepath.Join, extract constant, add test | unassigned | Todo | None |
-| BL-025 | Normalize container status in dockercli provider (single source of truth for exited→stopped) | unassigned | Todo | BL-013 |
+| BL-024 | Harden metadata file path in build/image: use filepath.Join, extract constant, add test | engineer | Completed | None |
+| BL-025 | Normalize container status in dockercli provider (single source of truth for exited→stopped) | engineer | Completed | BL-013 |
 | BL-026 | Fix `hind build` "path must be relative" error (BUG-009) | engineer | Completed | None |
-| BL-027 | Refactor `SetClientCount` (`pkg/cluster/manager.go`) to use `newNomadClientNode` factory; finishes BL-014 dedup (no collision risk; pure drift elimination) | unassigned | Todo | BL-014 |
+| BL-027 | Refactor `SetClientCount` (`pkg/cluster/manager.go`) to use `newNomadClientNode` factory; finishes BL-014 dedup (no collision risk; pure drift elimination) | engineer-2 | Completed | BL-014 |

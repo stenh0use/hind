@@ -54,3 +54,16 @@
 - 2026-04-27: Integrated BL-014 into refactor-cleanup by cherry-picking 6f267b1 as cc6292a (no conflicts in commit). Integration agent did an unauthorized `git stash pop` after the cherry-pick that contaminated the working tree (staged delete of active_cluster_test.go + 188-line append into cluster_test.go) and left a stray empty pkg/provider/mockprovider/mockprovider.go; both reverted/removed. Verification passed cleanly (go test ./... -count=1, make test).
 - 2026-04-27: Worktree cleanup: removed agent-bl014-a9d6c13 worktree + branch worktree-agent-bl014-a9d6c13. Only main worktree remains.
 - 2026-04-27: Added BL-027 to backlog (refactor SetClientCount to use newNomadClientNode factory; finishes BL-014 dedup).
+- 2026-04-28: Staff Engineer BL-025 review completed on working tree changes (status normalization in dockercli); verdict approved (normalization moved to provider adapter boundary via dockercli helper used by InspectContainer/ListContainers; CLI/tests updated to rely on canonical provider statuses; no boundary regressions found, though list completeness for stopped containers remains out of BL-025 scope).
+- 2026-04-28: QA handoff verification found BUG-011 (handoff state stale: `handoff.md` reports no in-flight worktrees while `git status` and `git worktree list` show active BL-025 changes and `agent-bl025-1e4f6a`). Logged in bugs.md.
+- 2026-04-28: Staff Engineer BL-024 review completed on working tree changes (metadata file path hardening in build/image/internal/docker); verdict approved (filepath.Join used via metadataFilePath helper, metadata filename constant extracted, targeted tests added, scope remains limited to BL-024; reported make test failure is unrelated unused import in pkg/cluster/cluster_test.go).
+- 2026-04-28: Staff Engineer BL-027 review completed on in-flight handoff/diff; verdict approved (SetClientCount now delegates client-node construction to newNomadClientNode at the right pkg/cluster boundary, focused tests confirm factory-equivalent output and count validation, scope remains dedup-only with preserved numbering semantics).
+- 2026-04-28: Reconciled team runtime state after BUG-011 verification: handoff.md updated to reflect active worktrees, BL-024/BL-027 staff approvals, and BL-024/BL-027 awaiting QA while BL-025 remains not fully closed.
+- 2026-04-28: QA completion confirmed for BL-024 and BL-027; runtime files had not yet been updated by teammate handoff flow, so team state was advanced from confirmed completion.
+
+## 2026-04-30 — Session start reconciliation
+- Confirmed BL-024 (`f978900`), BL-025 (`8c59bc7`), BL-027 (`4c4fa33`) all integrated into refactor-cleanup; work-items.md updated (BL-025 → Completed).
+- Stale worktree `agent-bl025-1e4f6a` confirmed clean; dispatched for removal.
+- BUG-011 closed (runtime state reconciled).
+- No in-flight items. Next wave: BL-009, BL-011, BL-015, BL-017, BL-020, BL-023.
+- 2026-04-30: Staff Engineer BL-009 planning review completed; verdict approved. Scope constrained to provider/cluster boundary shaping (move aggregate cluster state ownership to pkg/cluster, prune provider DTOs, remove dead summary structs) with explicit acceptance criteria and regression risks captured in handoff.md.
