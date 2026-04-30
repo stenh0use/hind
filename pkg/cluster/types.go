@@ -5,6 +5,7 @@ import (
 
 	"github.com/stenh0use/hind/pkg/build/release"
 	"github.com/stenh0use/hind/pkg/config"
+	"github.com/stenh0use/hind/pkg/provider"
 )
 
 const (
@@ -16,6 +17,11 @@ const (
 
 // StartResult indicates the outcome of a cluster start operation
 type StartResult int
+
+type ClusterInfo struct {
+	Containers []provider.ContainerInfo
+	Network    provider.NetworkInfo
+}
 
 const (
 	// StartResultCreated indicates a new cluster was created

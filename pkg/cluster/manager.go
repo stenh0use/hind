@@ -240,8 +240,8 @@ func (m *Manager) Delete(ctx context.Context) error {
 	return nil
 }
 
-func (m *Manager) Get(ctx context.Context) (*provider.ClusterInfo, error) {
-	state := &provider.ClusterInfo{}
+func (m *Manager) Get(ctx context.Context) (*ClusterInfo, error) {
+	state := &ClusterInfo{}
 
 	// Use in-memory config (don't load from disk)
 	// This allows Get() to work during reconciliation before config is saved

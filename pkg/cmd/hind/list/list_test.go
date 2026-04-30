@@ -4,12 +4,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stenh0use/hind/pkg/cluster"
 	"github.com/stenh0use/hind/pkg/config"
 	"github.com/stenh0use/hind/pkg/provider"
 )
 
 func TestAggregateClusterStatus_AllRunning(t *testing.T) {
-	info := &provider.ClusterInfo{
+	info := &cluster.ClusterInfo{
 		Containers: []provider.ContainerInfo{
 			{Name: "node1", Status: provider.Running.String(), Created: time.Now().Format(time.RFC3339)},
 			{Name: "node2", Status: provider.Running.String(), Created: time.Now().Format(time.RFC3339)},
@@ -35,7 +36,7 @@ func TestAggregateClusterStatus_AllRunning(t *testing.T) {
 }
 
 func TestAggregateClusterStatus_AllStopped(t *testing.T) {
-	info := &provider.ClusterInfo{
+	info := &cluster.ClusterInfo{
 		Containers: []provider.ContainerInfo{
 			{Name: "node1", Status: provider.Stopped.String(), Created: time.Now().Format(time.RFC3339)},
 			{Name: "node2", Status: provider.Stopped.String(), Created: time.Now().Format(time.RFC3339)},
@@ -57,7 +58,7 @@ func TestAggregateClusterStatus_AllStopped(t *testing.T) {
 }
 
 func TestAggregateClusterStatus_Mixed(t *testing.T) {
-	info := &provider.ClusterInfo{
+	info := &cluster.ClusterInfo{
 		Containers: []provider.ContainerInfo{
 			{Name: "node1", Status: provider.Running.String(), Created: time.Now().Format(time.RFC3339)},
 			{Name: "node2", Status: provider.Stopped.String(), Created: time.Now().Format(time.RFC3339)},
@@ -80,7 +81,7 @@ func TestAggregateClusterStatus_Mixed(t *testing.T) {
 }
 
 func TestAggregateClusterStatus_WithErrors(t *testing.T) {
-	info := &provider.ClusterInfo{
+	info := &cluster.ClusterInfo{
 		Containers: []provider.ContainerInfo{
 			{Name: "node1", Status: provider.Running.String(), Created: time.Now().Format(time.RFC3339)},
 			{Name: "node2", Status: provider.Error.String(), Created: time.Now().Format(time.RFC3339)},
@@ -99,7 +100,7 @@ func TestAggregateClusterStatus_WithErrors(t *testing.T) {
 }
 
 func TestAggregateClusterStatus_NoContainers(t *testing.T) {
-	info := &provider.ClusterInfo{
+	info := &cluster.ClusterInfo{
 		Containers: []provider.ContainerInfo{},
 	}
 
@@ -115,7 +116,7 @@ func TestAggregateClusterStatus_NoContainers(t *testing.T) {
 }
 
 func TestAggregateClusterStatus_PartialRunning(t *testing.T) {
-	info := &provider.ClusterInfo{
+	info := &cluster.ClusterInfo{
 		Containers: []provider.ContainerInfo{
 			{Name: "node1", Status: provider.Running.String(), Created: time.Now().Format(time.RFC3339)},
 			{Name: "node2", Status: provider.Running.String(), Created: time.Now().Format(time.RFC3339)},
@@ -235,7 +236,7 @@ func TestAggregateClusterStatus_OldestCreationTime(t *testing.T) {
 	middle := time.Now().Add(-24 * time.Hour)
 	newest := time.Now().Add(-1 * time.Hour)
 
-	info := &provider.ClusterInfo{
+	info := &cluster.ClusterInfo{
 		Containers: []provider.ContainerInfo{
 			{Name: "node1", Status: provider.Running.String(), Created: newest.Format(time.RFC3339)},
 			{Name: "node2", Status: provider.Running.String(), Created: oldest.Format(time.RFC3339)},
@@ -256,7 +257,7 @@ func TestAggregateClusterStatus_OldestCreationTime(t *testing.T) {
 }
 
 func TestAggregateClusterStatus_InvalidCreationTime(t *testing.T) {
-	info := &provider.ClusterInfo{
+	info := &cluster.ClusterInfo{
 		Containers: []provider.ContainerInfo{
 			{Name: "node1", Status: provider.Running.String(), Created: "invalid-time"},
 		},
