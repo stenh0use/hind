@@ -20,7 +20,7 @@ import (
 const DefaultGetTimeout = 2 * time.Minute
 
 type clusterManager interface {
-	Get(ctx context.Context) (*provider.ClusterInfo, error)
+	Get(ctx context.Context) (*cluster.ClusterInfo, error)
 }
 
 type clusterManagerFactory func(logger *log.Logger, name string) (clusterManager, error)
@@ -90,7 +90,7 @@ func runE(ctx context.Context, logger *log.Logger, streams cmd.IOStreams, timeou
 	return nil
 }
 
-func aggregateStatus(state *provider.ClusterInfo) string {
+func aggregateStatus(state *cluster.ClusterInfo) string {
 	if len(state.Containers) == 0 {
 		return provider.NA.String()
 	}

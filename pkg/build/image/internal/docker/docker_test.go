@@ -277,9 +277,9 @@ func TestNewImage(t *testing.T) {
 }
 
 type fakeCommandExecutor struct {
-	runFn     func(ctx context.Context, dir string, stdout, stderr io.Writer, name string, args ...string) error
-	outputFn  func(ctx context.Context, dir string, name string, args ...string) ([]byte, error)
-	stringFn  func(name string, args ...string) string
+	runFn    func(ctx context.Context, dir string, stdout, stderr io.Writer, name string, args ...string) error
+	outputFn func(ctx context.Context, dir string, name string, args ...string) ([]byte, error)
+	stringFn func(name string, args ...string) string
 }
 
 func (f fakeCommandExecutor) Run(ctx context.Context, dir string, stdout, stderr io.Writer, name string, args ...string) error {

@@ -11,6 +11,7 @@ import (
 	"github.com/apex/log"
 	"github.com/apex/log/handlers/discard"
 
+	"github.com/stenh0use/hind/pkg/cluster"
 	"github.com/stenh0use/hind/pkg/cmd"
 	"github.com/stenh0use/hind/pkg/provider"
 )
@@ -116,11 +117,11 @@ func TestCommandArgs(t *testing.T) {
 }
 
 type stubClusterManager struct {
-	state *provider.ClusterInfo
+	state *cluster.ClusterInfo
 	err   error
 }
 
-func (s *stubClusterManager) Get(ctx context.Context) (*provider.ClusterInfo, error) {
+func (s *stubClusterManager) Get(ctx context.Context) (*cluster.ClusterInfo, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -135,7 +136,7 @@ func TestRunE_FormatsStatusAndPortsFromRuntimeState(t *testing.T) {
 
 	originalFactory := newClusterManager
 	newClusterManager = func(logger *log.Logger, name string) (clusterManager, error) {
-		return &stubClusterManager{state: &provider.ClusterInfo{
+		return &stubClusterManager{state: &cluster.ClusterInfo{
 			Network: provider.NetworkInfo{Name: "hind.test"},
 			Containers: []provider.ContainerInfo{
 				{
@@ -205,7 +206,7 @@ func TestAggregateStatus(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			status := aggregateStatus(&provider.ClusterInfo{Containers: tt.containers})
+			status := aggregateStatus(&cluster.ClusterInfo{Containers: tt.containers})
 			if status != tt.expected {
 				t.Fatalf("expected status %q, got %q", tt.expected, status)
 			}
