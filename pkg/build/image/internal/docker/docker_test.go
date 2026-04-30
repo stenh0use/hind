@@ -2,8 +2,11 @@ package docker
 
 import (
 	"context"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/apex/log"
@@ -271,4 +274,138 @@ func TestNewImage(t *testing.T) {
 			t.Error("BuildOptions should be nil initially")
 		}
 	})
+}
+
+type fakeCommandExecutor struct {
+	runFn     func(ctx context.Context, dir string, stdout, stderr io.Writer, name string, args ...string) error
+	outputFn  func(ctx context.Context, dir string, name string, args ...string) ([]byte, error)
+	stringFn  func(name string, args ...string) string
+}
+
+func (f fakeCommandExecutor) Run(ctx context.Context, dir string, stdout, stderr io.Writer, name string, args ...string) error {
+	if f.runFn != nil {
+		return f.runFn(ctx, dir, stdout, stderr, name, args...)
+	}
+	return nil
+}
+
+func (f fakeCommandExecutor) Output(ctx context.Context, dir string, name string, args ...string) ([]byte, error) {
+	if f.outputFn != nil {
+		return f.outputFn(ctx, dir, name, args...)
+	}
+	return nil, nil
+}
+
+func (f fakeCommandExecutor) CommandString(name string, args ...string) string {
+	if f.stringFn != nil {
+		return f.stringFn(name, args...)
+	}
+	return ""
+}
+
+func TestTagExists_UsesExecutorSeam(t *testing.T) {
+	logger := &log.Logger{Handler: discard.New()}
+	img := NewImage(logger, "docker.io/stenh0use/hind.consul", "test")
+	img.executor = fakeCommandExecutor{
+		runFn: func(ctx context.Context, dir string, stdout, stderr io.Writer, name string, args ...string) error {
+			if name != "docker" {
+				t.Fatalf("name = %q, want docker", name)
+			}
+			if !strings.Contains(strings.Join(args, " "), "images -q") {
+				t.Fatalf("args = %v, want images -q command", args)
+			}
+			_, _ = stdout.Write([]byte("sha256:abc123\n"))
+			return nil
+		},
+	}
+
+	exists, err := img.TagExists(context.Background())
+	if err != nil {
+		t.Fatalf("TagExists() error = %v", err)
+	}
+	if !exists {
+		t.Fatal("TagExists() = false, want true")
+	}
+}
+
+func TestBuildImage_UsesExecutorSeam(t *testing.T) {
+	logger := &log.Logger{Handler: discard.New()}
+	ctx := context.Background()
+	buildDir := t.TempDir()
+
+	prev := defaultCommandExecutor
+	t.Cleanup(func() { defaultCommandExecutor = prev })
+
+	defaultCommandExecutor = fakeCommandExecutor{
+		outputFn: func(ctx context.Context, dir string, name string, args ...string) ([]byte, error) {
+			if name == "docker" && len(args) >= 4 && args[0] == "system" && args[1] == "info" {
+				return []byte(`{"ClientInfo":{"Plugins":[{"Name":"buildx"}]}}`), nil
+			}
+			return nil, errors.New("unexpected output call")
+		},
+	}
+
+	img := NewImage(logger, "docker.io/stenh0use/hind.consul", "test")
+	img.executor = fakeCommandExecutor{
+		runFn: func(ctx context.Context, dir string, stdout, stderr io.Writer, name string, args ...string) error {
+			if name != "docker" {
+				t.Fatalf("name = %q, want docker", name)
+			}
+			if dir != buildDir {
+				t.Fatalf("dir = %q, want %q", dir, buildDir)
+			}
+			if !strings.Contains(strings.Join(args, " "), "buildx build") {
+				t.Fatalf("args = %v, want buildx build", args)
+			}
+			metaPath := filepath.Join(buildDir, metadataFileName)
+			meta := []byte(`{"containerimage.config.digest":"sha256:abc123","image.name":"docker.io/stenh0use/hind.consul:test"}`)
+			if err := os.WriteFile(metaPath, meta, 0o644); err != nil {
+				t.Fatalf("failed to write metadata: %v", err)
+			}
+			return nil
+		},
+		stringFn: func(name string, args ...string) string { return name + " " + strings.Join(args, " ") },
+	}
+	img.UpdateBuildOptions(&BuildOptions{ContextDir: buildDir})
+
+	digest, err := img.BuildImage(ctx)
+	if err != nil {
+		t.Fatalf("BuildImage() error = %v", err)
+	}
+	if digest != "sha256:abc123" {
+		t.Fatalf("BuildImage() digest = %q, want %q", digest, "sha256:abc123")
+	}
+}
+
+func TestCheckDependenciesWithExecutor_MissingBuildx(t *testing.T) {
+	err := checkDependenciesWithExecutor(context.Background(), fakeCommandExecutor{
+		outputFn: func(ctx context.Context, dir string, name string, args ...string) ([]byte, error) {
+			return []byte(`{"ClientInfo":{"Plugins":[{"Name":"compose"}]}}`), nil
+		},
+	})
+	if err == nil {
+		t.Fatal("checkDependenciesWithExecutor() error = nil, want missing buildx error")
+	}
+	if !strings.Contains(err.Error(), "buildx") {
+		t.Fatalf("error = %q, want to contain buildx", err.Error())
+	}
+}
+
+func TestTagExists_PropagatesExecutorError(t *testing.T) {
+	logger := &log.Logger{Handler: discard.New()}
+	img := NewImage(logger, "docker.io/stenh0use/hind.consul", "test")
+	img.executor = fakeCommandExecutor{
+		runFn: func(ctx context.Context, dir string, stdout, stderr io.Writer, name string, args ...string) error {
+			_, _ = stderr.Write([]byte("boom"))
+			return errors.New("command failed")
+		},
+	}
+
+	_, err := img.TagExists(context.Background())
+	if err == nil {
+		t.Fatal("TagExists() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("error = %q, want stderr content", err.Error())
+	}
 }
