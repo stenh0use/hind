@@ -123,10 +123,9 @@ func TestManagerGet_ReturnsErrorWhenNoPersistedConfigAndNoDefaults(t *testing.T)
 	}
 }
 
-func TestManagerStop_ReturnsWrappedStopContainerError(t *testing.T) {
+func TestManagerStop_AggregatesStopContainerError(t *testing.T) {
 	t.Parallel()
 
-	wantErr := errors.New("stop failed")
 	nodeName := "hind.demo.consul.01"
 
 	stub := &mock.ClientStub{
@@ -134,7 +133,7 @@ func TestManagerStop_ReturnsWrappedStopContainerError(t *testing.T) {
 			return &provider.ContainerInfo{Name: nodeName, Status: provider.Running.String()}, nil
 		},
 		StopContainerFn: func(context.Context, string) error {
-			return wantErr
+			return errors.New("stop failed")
 		},
 	}
 
@@ -145,15 +144,15 @@ func TestManagerStop_ReturnsWrappedStopContainerError(t *testing.T) {
 		},
 	}, stub)
 
-	err := m.Stop(context.Background())
-	if err == nil {
-		t.Fatal("Stop() expected error, got nil")
+	result, err := m.StopWithOptions(context.Background(), StopOptions{})
+	if err != nil {
+		t.Fatalf("StopWithOptions() unexpected error: %v", err)
 	}
-	if !errors.Is(err, wantErr) {
-		t.Fatalf("Stop() error = %v, want wrapped %v", err, wantErr)
+	if result.FailedCount != 1 {
+		t.Fatalf("FailedCount = %d, want 1", result.FailedCount)
 	}
-	if !strings.Contains(err.Error(), "failed to stop container") {
-		t.Fatalf("Stop() error = %q, want stop-container context", err)
+	if len(result.Failures) != 1 || result.Failures[0] != nodeName {
+		t.Fatalf("Failures = %v, want [%s]", result.Failures, nodeName)
 	}
 }
 

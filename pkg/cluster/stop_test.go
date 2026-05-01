@@ -58,7 +58,7 @@ func TestStopWithOptions(t *testing.T) {
 			m := &Manager{
 				logger:   &log.Logger{Handler: discard.New(), Level: log.ErrorLevel},
 				provider: client,
-				config: &config.Cluster{Nodes: []config.Node{{Name: "n1"}, {Name: "n2"}}},
+				config:   &config.Cluster{Name: tt.name, Nodes: []config.Node{{Name: "n1"}, {Name: "n2"}}},
 			}
 
 			res, err := m.StopWithOptions(context.Background(), StopOptions{Force: tt.force})

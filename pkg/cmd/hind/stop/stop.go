@@ -104,6 +104,10 @@ func runE(ctx context.Context, logger *log.Logger, streams cmd.IOStreams, timeou
 		fmt.Fprintf(streams.ErrOut, "Failed to stop container '%s'\n", name)
 	}
 
+	if result.FailedPreStopCount > 0 {
+		fmt.Fprintf(streams.ErrOut, "Cluster '%s' stopped (some containers were already failed)\n", clusterName)
+		return nil
+	}
 	if result.AlreadyStopped() {
 		fmt.Fprintf(streams.ErrOut, "Cluster '%s' is already stopped\n", clusterName)
 		return nil
@@ -114,10 +118,6 @@ func runE(ctx context.Context, logger *log.Logger, streams cmd.IOStreams, timeou
 	}
 	if result.FailedCount > 0 {
 		fmt.Fprintf(streams.ErrOut, "Cluster '%s' partially stopped\n", clusterName)
-		return nil
-	}
-	if result.FailedPreStopCount > 0 {
-		fmt.Fprintf(streams.ErrOut, "Cluster '%s' stopped (some containers were already failed)\n", clusterName)
 		return nil
 	}
 
