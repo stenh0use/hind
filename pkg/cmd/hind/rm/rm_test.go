@@ -1,14 +1,18 @@
 package rm
 
 import (
+	"context"
 	"io"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/apex/log"
 	"github.com/apex/log/handlers/discard"
 
+	"github.com/stenh0use/hind/pkg/cluster"
 	"github.com/stenh0use/hind/pkg/cmd"
+	"github.com/stenh0use/hind/pkg/file"
 )
 
 func TestNewCommand(t *testing.T) {
@@ -63,6 +67,63 @@ func TestCommandFlags(t *testing.T) {
 
 	if timeoutFlag.DefValue != "2m0s" {
 		t.Errorf("Expected timeout default value to be '2m0s', got '%s'", timeoutFlag.DefValue)
+	}
+}
+
+// stubDeleter is a no-op clusterDeleter used to bypass real Docker calls in tests.
+type stubDeleter struct{}
+
+func (s *stubDeleter) Delete(_ context.Context) error { return nil }
+
+// TestRunE_ClearsActiveClusterOnDelete verifies that when the cluster being removed
+// is the currently active cluster, runE calls ClearActiveCluster so that subsequent
+// commands fall back to the "default" cluster resolution path.
+func TestRunE_ClearsActiveClusterOnDelete(t *testing.T) {
+	// Redirect HOME so cluster state is isolated to this test.
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpDir)
+	defer os.Setenv("HOME", oldHome)
+
+	const clusterName = "my-cluster"
+
+	// Pre-create the cluster directory so SetActiveCluster accepts the name.
+	fm, err := file.NewFromHomeDir(cluster.DefaultConfigParentDir, cluster.DefaultConfigName)
+	if err != nil {
+		t.Fatalf("NewFromHomeDir: %v", err)
+	}
+	clusterDir := file.JoinPath(cluster.ClusterConfigDir, clusterName)
+	if err := fm.EnsureDir(clusterDir); err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+
+	// Set the cluster as active.
+	if err := cluster.SetActiveCluster(clusterName); err != nil {
+		t.Fatalf("SetActiveCluster: %v", err)
+	}
+
+	// Replace the factory with a stub so Delete() succeeds without Docker.
+	orig := newClusterManagerFn
+	newClusterManagerFn = func(_ *log.Logger, _ string) (clusterDeleter, error) {
+		return &stubDeleter{}, nil
+	}
+	defer func() { newClusterManagerFn = orig }()
+
+	logger := &log.Logger{Handler: discard.New(), Level: log.ErrorLevel}
+	streams := cmd.IOStreams{Out: io.Discard, ErrOut: io.Discard}
+
+	if err := runE(context.Background(), logger, streams, DefaultDeleteTimeout, clusterName); err != nil {
+		t.Fatalf("runE returned unexpected error: %v", err)
+	}
+
+	// After deletion of the active cluster the active cluster file must be cleared,
+	// yielding an empty string from GetActiveCluster (the canonical "no active cluster" state).
+	active, err := cluster.GetActiveCluster()
+	if err != nil {
+		t.Fatalf("GetActiveCluster: %v", err)
+	}
+	if active != "" {
+		t.Errorf("expected active cluster to be cleared (empty string), got %q", active)
 	}
 }
 
