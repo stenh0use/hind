@@ -14,6 +14,8 @@ type Client interface {
 	StartContainer(ctx context.Context, name string) error
 	// Stop a node if it is running
 	StopContainer(ctx context.Context, name string) error
+	// Force stop a node immediately
+	KillContainer(ctx context.Context, name string) error
 	// Delete a node
 	DeleteContainer(ctx context.Context, name string) error
 	// Inspect node state

@@ -12,6 +12,7 @@ type ClientStub struct {
 	CreateContainerFn  func(context.Context, provider.ContainerSpec) (string, error)
 	StartContainerFn   func(context.Context, string) error
 	StopContainerFn    func(context.Context, string) error
+	KillContainerFn    func(context.Context, string) error
 	DeleteContainerFn  func(context.Context, string) error
 	InspectContainerFn func(context.Context, string) (*provider.ContainerInfo, error)
 	ListContainersFn   func(context.Context, []string) ([]provider.ContainerInfo, error)
@@ -41,6 +42,13 @@ func (c *ClientStub) StartContainer(ctx context.Context, name string) error {
 func (c *ClientStub) StopContainer(ctx context.Context, name string) error {
 	if c.StopContainerFn != nil {
 		return c.StopContainerFn(ctx, name)
+	}
+	return nil
+}
+
+func (c *ClientStub) KillContainer(ctx context.Context, name string) error {
+	if c.KillContainerFn != nil {
+		return c.KillContainerFn(ctx, name)
 	}
 	return nil
 }

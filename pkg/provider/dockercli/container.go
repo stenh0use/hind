@@ -165,6 +165,23 @@ func (c *Client) StopContainer(ctx context.Context, name string) error {
 	return nil
 }
 
+// KillContainer force-stops a running container immediately.
+func (c *Client) KillContainer(ctx context.Context, name string) error {
+	if name == "" {
+		return fmt.Errorf("name or id is required to kill a container")
+	}
+	cmd := baseContainerCmd(ctx)
+	cmd.Args = append(cmd.Args, "kill", name)
+
+	c.logger.WithField("container", name).Debug("killing container")
+	_, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to kill container: %w", err)
+	}
+
+	return nil
+}
+
 // Delete a container
 // TODO: need options such as `-v` to remove anonymous volumes on delete
 func (c *Client) DeleteContainer(ctx context.Context, name string) error {

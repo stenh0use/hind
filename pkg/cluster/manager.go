@@ -146,50 +146,76 @@ func (m *Manager) waitForContainersRunning(ctx context.Context, timeout time.Dur
 	return fmt.Errorf("timeout waiting for containers to reach running state")
 }
 
+type StopOptions struct {
+	Force   bool
+	Verbose bool
+}
+
+type StopResult struct {
+	StoppedCount        int
+	AlreadyStoppedCount int
+	FailedCount         int
+	FailedPreStopCount  int
+	Failures            []string
+	VerboseLines        []string
+}
+
+func (r StopResult) AlreadyStopped() bool {
+	return r.StoppedCount == 0 && r.FailedCount == 0 && r.AlreadyStoppedCount > 0
+}
+
 func (m *Manager) Stop(ctx context.Context) error {
+	_, err := m.StopWithOptions(ctx, StopOptions{})
+	return err
+}
+
+func (m *Manager) StopWithOptions(ctx context.Context, opts StopOptions) (StopResult, error) {
+	result := StopResult{}
 	if err := m.LoadPersistedConfig(); err != nil {
-		return err
+		return result, err
 	}
 
-	// Track how many containers were stopped
-	stoppedCount := 0
-	alreadyStoppedCount := 0
-
-	// Stop each node container
 	for _, node := range m.config.Nodes {
+		if opts.Verbose {
+			result.VerboseLines = append(result.VerboseLines, fmt.Sprintf("Checking container '%s' status", node.Name))
+		}
 		containerInfo, err := m.provider.InspectContainer(ctx, node.Name)
 		if err != nil {
-			return fmt.Errorf("failed to inspect container %s: %w", node.Name, err)
+			return result, fmt.Errorf("failed to inspect container %s: %w", node.Name, err)
 		}
-
-		// Skip if container doesn't exist
 		if containerInfo == nil {
-			m.logger.WithField("name", node.Name).Debug("container not found, skipping...")
+			if opts.Verbose {
+				result.VerboseLines = append(result.VerboseLines, fmt.Sprintf("Container '%s' not found, skipping", node.Name))
+			}
 			continue
 		}
 
-		// Check current status and stop if running
 		if containerInfo.Status == provider.Running.String() {
-			m.logger.WithField("name", node.Name).Debug("stopping container")
-			if err := m.provider.StopContainer(ctx, node.Name); err != nil {
-				return fmt.Errorf("failed to stop container %s: %w", node.Name, err)
+			if opts.Verbose {
+				result.VerboseLines = append(result.VerboseLines, fmt.Sprintf("Stopping container '%s'", node.Name))
 			}
-			m.logger.WithField("name", node.Name).Info("stopped container")
-			stoppedCount++
-		} else {
-			m.logger.WithField("name", node.Name).Debug("container already stopped")
-			alreadyStoppedCount++
+			if opts.Force {
+				err = m.provider.KillContainer(ctx, node.Name)
+			} else {
+				err = m.provider.StopContainer(ctx, node.Name)
+			}
+			if err != nil {
+				result.FailedCount++
+				result.Failures = append(result.Failures, node.Name)
+				m.logger.Warnf("Failed to stop container '%s': %v", node.Name, err)
+				continue
+			}
+			result.StoppedCount++
+			continue
 		}
+
+		if containerInfo.Status == provider.Error.String() {
+			result.FailedPreStopCount++
+		}
+		result.AlreadyStoppedCount++
 	}
 
-	// Log summary
-	if stoppedCount == 0 && alreadyStoppedCount > 0 {
-		m.logger.Debug("all containers already stopped")
-	} else if stoppedCount > 0 {
-		m.logger.Debugf("stopped %d container(s)", stoppedCount)
-	}
-
-	return nil
+	return result, nil
 }
 
 func (m *Manager) Delete(ctx context.Context) error {
