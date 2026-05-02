@@ -49,7 +49,7 @@ func (m *Manager) Reconcile(ctx context.Context) error {
 	}
 
 	// 2. Calculate what needs to change
-	plan, err := m.calculateReconcilePlan(ctx, actual)
+	plan, err := m.calculateReconcilePlan(actual)
 	if err != nil {
 		return fmt.Errorf("failed to calculate reconcile plan: %w", err)
 	}
@@ -114,7 +114,7 @@ func (m *Manager) getActualState(ctx context.Context) (*ActualState, error) {
 }
 
 // calculateReconcilePlan compares desired vs actual and produces a plan
-func (m *Manager) calculateReconcilePlan(ctx context.Context, actual *ActualState) (*ReconcilePlan, error) {
+func (m *Manager) calculateReconcilePlan(actual *ActualState) (*ReconcilePlan, error) {
 	plan := &ReconcilePlan{
 		ContainersToCreate:   []config.Node{},
 		ContainersToStart:    []string{},
@@ -190,8 +190,9 @@ func (m *Manager) executeReconcilePlan(ctx context.Context, plan *ReconcilePlan)
 		}
 
 		// Recreate
-		action.NewConfig.Labels = labels
-		id, err := m.provider.CreateContainer(ctx, action.NewConfig)
+		nodeConfig := action.NewConfig
+		nodeConfig.Labels = labels
+		id, err := m.provider.CreateContainer(ctx, provider.ContainerSpecFromNode(nodeConfig))
 		if err != nil {
 			return fmt.Errorf("failed to recreate container '%s': %w", action.ExistingName, err)
 		}
@@ -202,7 +203,7 @@ func (m *Manager) executeReconcilePlan(ctx context.Context, plan *ReconcilePlan)
 	for _, node := range plan.ContainersToCreate {
 		m.logger.Infof("Creating container '%s'", node.Name)
 		node.Labels = labels
-		id, err := m.provider.CreateContainer(ctx, node)
+		id, err := m.provider.CreateContainer(ctx, provider.ContainerSpecFromNode(node))
 		if err != nil {
 			return fmt.Errorf("failed to create container '%s': %w", node.Name, err)
 		}

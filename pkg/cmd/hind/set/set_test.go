@@ -3,6 +3,7 @@ package set
 import (
 	"io"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/apex/log"
@@ -79,13 +80,25 @@ func TestSetProfileCommand_NonExistentCluster(t *testing.T) {
 	// Create command
 	command := NewCommand(logger, streams)
 
-	// Set args to non-existent cluster
-	command.SetArgs([]string{"profile", "non-existent-cluster"})
+	clusterName := "non-existent-cluster"
+	command.SetArgs([]string{"profile", clusterName})
 
 	// Execute command - should fail
 	err := command.Execute()
 	if err == nil {
 		t.Fatal("Expected error when setting non-existent cluster as active, got nil")
+	}
+
+	// Assert exact-message contract: the error must identify the cluster and state it does not exist.
+	// SetActiveCluster returns "cluster '<name>' does not exist"; the command wraps it with
+	// "failed to set active cluster: ...". Both the cluster name and "does not exist" must
+	// appear in the final user-visible error message so the user knows which profile is missing.
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, clusterName) {
+		t.Errorf("error message %q does not contain cluster name %q", errMsg, clusterName)
+	}
+	if !strings.Contains(errMsg, "does not exist") {
+		t.Errorf("error message %q does not contain 'does not exist'", errMsg)
 	}
 }
 

@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stenh0use/hind/pkg/config"
@@ -75,7 +74,7 @@ func TestCalculateReconcilePlan_NewCluster(t *testing.T) {
 		Containers: map[string]*provider.ContainerInfo{},
 	}
 
-	plan, err := m.calculateReconcilePlan(context.Background(), actual)
+	plan, err := m.calculateReconcilePlan(actual)
 	if err != nil {
 		t.Fatalf("calculateReconcilePlan() error = %v", err)
 	}
@@ -118,7 +117,7 @@ func TestCalculateReconcilePlan_AllRunning(t *testing.T) {
 		},
 	}
 
-	plan, err := m.calculateReconcilePlan(context.Background(), actual)
+	plan, err := m.calculateReconcilePlan(actual)
 	if err != nil {
 		t.Fatalf("calculateReconcilePlan() error = %v", err)
 	}
@@ -145,16 +144,16 @@ func TestCalculateReconcilePlan_StoppedContainers(t *testing.T) {
 		Containers: map[string]*provider.ContainerInfo{
 			"hind.test.consul.01": {
 				Name:   "hind.test.consul.01",
-				Status: "exited",
+				Status: provider.Stopped.String(),
 			},
 			"hind.test.nomad.01": {
 				Name:   "hind.test.nomad.01",
-				Status: "exited",
+				Status: provider.Stopped.String(),
 			},
 		},
 	}
 
-	plan, err := m.calculateReconcilePlan(context.Background(), actual)
+	plan, err := m.calculateReconcilePlan(actual)
 	if err != nil {
 		t.Fatalf("calculateReconcilePlan() error = %v", err)
 	}
@@ -193,7 +192,7 @@ func TestCalculateReconcilePlan_UnhealthyContainers(t *testing.T) {
 		},
 	}
 
-	plan, err := m.calculateReconcilePlan(context.Background(), actual)
+	plan, err := m.calculateReconcilePlan(actual)
 	if err != nil {
 		t.Fatalf("calculateReconcilePlan() error = %v", err)
 	}
@@ -234,7 +233,7 @@ func TestCalculateReconcilePlan_MixedStates(t *testing.T) {
 			},
 			"hind.test.nomad.01": {
 				Name:   "hind.test.nomad.01",
-				Status: "exited",
+				Status: provider.Stopped.String(),
 			},
 			"hind.test.vault.01": {
 				Name:   "hind.test.vault.01",
@@ -244,7 +243,7 @@ func TestCalculateReconcilePlan_MixedStates(t *testing.T) {
 		},
 	}
 
-	plan, err := m.calculateReconcilePlan(context.Background(), actual)
+	plan, err := m.calculateReconcilePlan(actual)
 	if err != nil {
 		t.Fatalf("calculateReconcilePlan() error = %v", err)
 	}

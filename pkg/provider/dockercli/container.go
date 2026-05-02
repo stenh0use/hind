@@ -12,7 +12,6 @@ import (
 	"github.com/apex/log"
 	"github.com/moby/moby/api/types/container"
 
-	"github.com/stenh0use/hind/pkg/config"
 	"github.com/stenh0use/hind/pkg/provider"
 )
 
@@ -22,8 +21,15 @@ func baseContainerCmd(ctx context.Context) *exec.Cmd {
 	return baseClientCmd(ctx, containerCmd)
 }
 
+func normalizeContainerStatus(status string) string {
+	if strings.EqualFold(status, "exited") {
+		return provider.Stopped.String()
+	}
+	return status
+}
+
 // Create and start a container
-func (c *Client) CreateContainer(ctx context.Context, cfg config.Node) (string, error) {
+func (c *Client) CreateContainer(ctx context.Context, cfg provider.ContainerSpec) (string, error) {
 	if cfg.Name == "" {
 		return "", fmt.Errorf("name is required to create a container")
 	}
@@ -61,7 +67,7 @@ func (c *Client) CreateContainer(ctx context.Context, cfg config.Node) (string, 
 	} else if cfg.Image.Tag != "" {
 		imgRef = fmt.Sprintf("%s:%s", cfg.Image.Name, cfg.Image.Tag)
 	} else {
-		imgRef = cfg.Name
+		imgRef = cfg.Image.Name
 	}
 	// add container name
 	if cfg.Name != "" {
@@ -159,6 +165,23 @@ func (c *Client) StopContainer(ctx context.Context, name string) error {
 	return nil
 }
 
+// KillContainer force-stops a running container immediately.
+func (c *Client) KillContainer(ctx context.Context, name string) error {
+	if name == "" {
+		return fmt.Errorf("name or id is required to kill a container")
+	}
+	cmd := baseContainerCmd(ctx)
+	cmd.Args = append(cmd.Args, "kill", name)
+
+	c.logger.WithField("container", name).Debug("killing container")
+	_, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to kill container: %w", err)
+	}
+
+	return nil
+}
+
 // Delete a container
 // TODO: need options such as `-v` to remove anonymous volumes on delete
 func (c *Client) DeleteContainer(ctx context.Context, name string) error {
@@ -214,7 +237,7 @@ func (c *Client) InspectContainer(ctx context.Context, name string) (*provider.C
 		Name:     res.Name,
 		Created:  res.Created,
 		HostName: res.Config.Hostname,
-		Status:   res.State.Status,
+		Status:   normalizeContainerStatus(res.State.Status),
 		Image:    res.Config.Image,
 	}
 
@@ -275,7 +298,7 @@ func (c *Client) ListContainers(ctx context.Context, filters []string) ([]provid
 		response = append(response, provider.ContainerInfo{
 			ID:     entry.ID,
 			Name:   entry.Names,
-			Status: entry.State,
+			Status: normalizeContainerStatus(entry.State),
 			Image:  entry.Image,
 		})
 	}

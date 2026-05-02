@@ -138,7 +138,7 @@ func (c *Client) ListNetworks(ctx context.Context, filters []string) ([]provider
 
 	out, err := cmd.Output()
 	if err != nil {
-		return response, fmt.Errorf("failed to inspect network: %w", err)
+		return response, fmt.Errorf("failed to list networks: %w", err)
 	}
 
 	if len(out) == 0 {

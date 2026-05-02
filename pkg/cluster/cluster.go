@@ -4,7 +4,11 @@
 package cluster
 
 import (
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/stenh0use/hind/pkg/file"
@@ -23,6 +27,39 @@ const (
 	DefaultContainerPollInterval = 1 * time.Second
 )
 
+// ValidateClusterName ensures a cluster name cannot be used for path traversal
+// or absolute/root escape when constructing persisted config paths.
+func ValidateClusterName(name string) error {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return errors.New("cluster name cannot be empty")
+	}
+
+	if filepath.IsAbs(trimmed) {
+		return errors.New("cluster name must be relative")
+	}
+
+	segments := strings.FieldsFunc(trimmed, func(r rune) bool {
+		return r == '/' || r == '\\'
+	})
+	for _, segment := range segments {
+		if segment == ".." {
+			return errors.New("cluster name cannot contain traversal segments")
+		}
+	}
+
+	cleaned := filepath.Clean(trimmed)
+	if cleaned == "." {
+		return errors.New("cluster name cannot resolve to current directory")
+	}
+
+	if strings.HasPrefix(cleaned, "..") {
+		return errors.New("cluster name cannot escape root")
+	}
+
+	return nil
+}
+
 // List returns all cluster names found in the cluster configuration directory.
 func List() ([]string, error) {
 	var clusters []string
@@ -32,6 +69,9 @@ func List() ([]string, error) {
 	}
 	entries, err := fm.ListDir(ClusterConfigDir)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return clusters, nil
+		}
 		return nil, err
 	}
 
@@ -66,6 +106,10 @@ func GetActiveCluster() (string, error) {
 
 // SetActiveCluster sets the currently active cluster
 func SetActiveCluster(clusterName string) error {
+	if err := ValidateClusterName(clusterName); err != nil {
+		return fmt.Errorf("invalid cluster name %q: %w", clusterName, err)
+	}
+
 	fm, err := file.NewFromHomeDir(DefaultConfigParentDir, DefaultConfigName)
 	if err != nil {
 		return err

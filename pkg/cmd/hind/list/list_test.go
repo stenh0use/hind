@@ -1,15 +1,45 @@
 package list
 
 import (
+	"bytes"
+	"context"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/apex/log"
+	"github.com/apex/log/handlers/discard"
+
+	"github.com/stenh0use/hind/pkg/cluster"
+	"github.com/stenh0use/hind/pkg/cmd"
 	"github.com/stenh0use/hind/pkg/config"
 	"github.com/stenh0use/hind/pkg/provider"
 )
 
+func TestRunE_NoClustersOnFirstRunWhenConfigDirMissing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	logger := &log.Logger{Handler: discard.New(), Level: log.ErrorLevel}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	streams := cmd.IOStreams{In: strings.NewReader(""), Out: &stdout, ErrOut: &stderr}
+
+	err := runE(context.Background(), logger, streams, DefaultListTimeout)
+	if err != nil {
+		t.Fatalf("runE() returned error on first-run missing config dir: %v", err)
+	}
+
+	if got := stderr.String(); !strings.Contains(got, "No clusters found") {
+		t.Fatalf("expected empty-state output in stderr, got %q", got)
+	}
+
+	if got := stdout.String(); got != "" {
+		t.Fatalf("expected no stdout table output, got %q", got)
+	}
+}
+
 func TestAggregateClusterStatus_AllRunning(t *testing.T) {
-	info := &provider.ClusterInfo{
+	info := &cluster.ClusterInfo{
 		Containers: []provider.ContainerInfo{
 			{Name: "node1", Status: provider.Running.String(), Created: time.Now().Format(time.RFC3339)},
 			{Name: "node2", Status: provider.Running.String(), Created: time.Now().Format(time.RFC3339)},
@@ -35,7 +65,7 @@ func TestAggregateClusterStatus_AllRunning(t *testing.T) {
 }
 
 func TestAggregateClusterStatus_AllStopped(t *testing.T) {
-	info := &provider.ClusterInfo{
+	info := &cluster.ClusterInfo{
 		Containers: []provider.ContainerInfo{
 			{Name: "node1", Status: provider.Stopped.String(), Created: time.Now().Format(time.RFC3339)},
 			{Name: "node2", Status: provider.Stopped.String(), Created: time.Now().Format(time.RFC3339)},
@@ -57,7 +87,7 @@ func TestAggregateClusterStatus_AllStopped(t *testing.T) {
 }
 
 func TestAggregateClusterStatus_Mixed(t *testing.T) {
-	info := &provider.ClusterInfo{
+	info := &cluster.ClusterInfo{
 		Containers: []provider.ContainerInfo{
 			{Name: "node1", Status: provider.Running.String(), Created: time.Now().Format(time.RFC3339)},
 			{Name: "node2", Status: provider.Stopped.String(), Created: time.Now().Format(time.RFC3339)},
@@ -80,7 +110,7 @@ func TestAggregateClusterStatus_Mixed(t *testing.T) {
 }
 
 func TestAggregateClusterStatus_WithErrors(t *testing.T) {
-	info := &provider.ClusterInfo{
+	info := &cluster.ClusterInfo{
 		Containers: []provider.ContainerInfo{
 			{Name: "node1", Status: provider.Running.String(), Created: time.Now().Format(time.RFC3339)},
 			{Name: "node2", Status: provider.Error.String(), Created: time.Now().Format(time.RFC3339)},
@@ -99,7 +129,7 @@ func TestAggregateClusterStatus_WithErrors(t *testing.T) {
 }
 
 func TestAggregateClusterStatus_NoContainers(t *testing.T) {
-	info := &provider.ClusterInfo{
+	info := &cluster.ClusterInfo{
 		Containers: []provider.ContainerInfo{},
 	}
 
@@ -115,7 +145,7 @@ func TestAggregateClusterStatus_NoContainers(t *testing.T) {
 }
 
 func TestAggregateClusterStatus_PartialRunning(t *testing.T) {
-	info := &provider.ClusterInfo{
+	info := &cluster.ClusterInfo{
 		Containers: []provider.ContainerInfo{
 			{Name: "node1", Status: provider.Running.String(), Created: time.Now().Format(time.RFC3339)},
 			{Name: "node2", Status: provider.Running.String(), Created: time.Now().Format(time.RFC3339)},
@@ -235,7 +265,7 @@ func TestAggregateClusterStatus_OldestCreationTime(t *testing.T) {
 	middle := time.Now().Add(-24 * time.Hour)
 	newest := time.Now().Add(-1 * time.Hour)
 
-	info := &provider.ClusterInfo{
+	info := &cluster.ClusterInfo{
 		Containers: []provider.ContainerInfo{
 			{Name: "node1", Status: provider.Running.String(), Created: newest.Format(time.RFC3339)},
 			{Name: "node2", Status: provider.Running.String(), Created: oldest.Format(time.RFC3339)},
@@ -255,8 +285,46 @@ func TestAggregateClusterStatus_OldestCreationTime(t *testing.T) {
 	}
 }
 
+func TestAggregateClusterStatus_StoppedStatusComesFromProvider(t *testing.T) {
+	info := &cluster.ClusterInfo{
+		Containers: []provider.ContainerInfo{
+			{Name: "node1", Status: provider.Stopped.String(), Created: time.Now().Format(time.RFC3339)},
+			{Name: "node2", Status: provider.Stopped.String(), Created: time.Now().Format(time.RFC3339)},
+		},
+	}
+
+	cfg := &config.Cluster{
+		Nodes: []config.Node{{}, {}},
+	}
+
+	result := aggregateClusterStatus(info, cfg)
+
+	if result.Status != "stopped" {
+		t.Errorf("Expected status 'stopped' for stopped containers, got '%s'", result.Status)
+	}
+}
+
+func TestAggregateClusterStatus_ExitedStatusWithoutNormalizationIsPartial(t *testing.T) {
+	info := &cluster.ClusterInfo{
+		Containers: []provider.ContainerInfo{
+			{Name: "node1", Status: "exited", Created: time.Now().Format(time.RFC3339)},
+			{Name: "node2", Status: "exited", Created: time.Now().Format(time.RFC3339)},
+		},
+	}
+
+	cfg := &config.Cluster{
+		Nodes: []config.Node{{}, {}},
+	}
+
+	result := aggregateClusterStatus(info, cfg)
+
+	if result.Status != "partial" {
+		t.Errorf("Expected status 'partial' without provider normalization, got '%s'", result.Status)
+	}
+}
+
 func TestAggregateClusterStatus_InvalidCreationTime(t *testing.T) {
-	info := &provider.ClusterInfo{
+	info := &cluster.ClusterInfo{
 		Containers: []provider.ContainerInfo{
 			{Name: "node1", Status: provider.Running.String(), Created: "invalid-time"},
 		},

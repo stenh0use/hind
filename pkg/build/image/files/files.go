@@ -65,7 +65,7 @@ func imageFS(i string) (fs.FS, error) {
 }
 
 func (i *Image) WriteFiles() error {
-	if err := i.manager.EnsureDir(i.buildDir); err != nil {
+	if err := i.manager.EnsureDir("."); err != nil {
 		return fmt.Errorf("failed to create build dir: %w", err)
 	}
 

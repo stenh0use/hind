@@ -10,17 +10,33 @@ import (
 
 	"github.com/stenh0use/hind/pkg/cluster"
 	"github.com/stenh0use/hind/pkg/cmd"
+	"github.com/stenh0use/hind/pkg/provider/dockercli"
 )
 
 // DefaultStartTimeout is the default timeout for starting a cluster
 const DefaultStartTimeout = 5 * time.Minute
 
+// clusterStarter is the minimal interface required by runE to start a cluster.
+// It is satisfied by *cluster.Manager and can be replaced in tests to avoid Docker.
+type clusterStarter interface {
+	ConfigFileExists() bool
+	SetClientCount(ctx context.Context, count int) error
+	Start(ctx context.Context) (cluster.StartResult, error)
+	CountClientNodes() int
+	Scale(ctx context.Context, targetClientCount int) error
+}
+
+// newStartManagerFn is the factory used to create a clusterStarter for a given cluster
+// name. Tests may replace this variable to inject a stub without a real Docker daemon.
+var newStartManagerFn = func(logger *log.Logger, clusterName string) (clusterStarter, error) {
+	return cluster.New(logger, clusterName, dockercli.New(logger))
+}
+
 // flagpole holds all flags for the start command
 type flagpole struct {
-	hindVersion string
-	timeout     time.Duration
-	clients     int
-	verbose     bool
+	timeout time.Duration
+	clients int
+	verbose bool
 }
 
 // NewCommand creates the cluster start command
@@ -37,13 +53,16 @@ func NewCommand(logger *log.Logger, streams cmd.IOStreams) *cobra.Command {
 		},
 	}
 
-	command.Flags().StringVar(&flags.hindVersion, "version", "latest", "Hind image version to use")
 	command.Flags().DurationVar(&flags.timeout, "timeout", DefaultStartTimeout, "Timeout for starting the cluster")
 	command.Flags().IntVar(&flags.clients, "clients", 1, "Number of client nodes to create")
 	command.Flags().BoolVar(&flags.verbose, "verbose", false, "Enable verbose output")
 
 	return command
 }
+
+// checkDockerDaemonFn is the function used to verify Docker daemon accessibility.
+// Tests may replace this variable to bypass the real Docker check.
+var checkDockerDaemonFn = checkDockerDaemon
 
 func runE(cmd *cobra.Command, ctx context.Context, logger *log.Logger, streams cmd.IOStreams, flags *flagpole, args []string) error {
 	// Get cluster name from args or use default
@@ -75,14 +94,14 @@ func runE(cmd *cobra.Command, ctx context.Context, logger *log.Logger, streams c
 	startCtx, cancel := context.WithTimeout(ctx, flags.timeout)
 	defer cancel()
 
-	// Check if Docker daemon is accessible first
+	// Check if Docker daemon is accessible first (replaceable via checkDockerDaemonFn in tests)
 	logger.Debug("Checking Docker daemon accessibility")
-	if err := checkDockerDaemon(startCtx, logger); err != nil {
+	if err := checkDockerDaemonFn(startCtx, logger); err != nil {
 		return fmt.Errorf("Docker daemon is not accessible: %w", err)
 	}
 
-	// Create cluster manager
-	mgr, err := cluster.New(logger, clusterName)
+	// Create cluster manager via factory seam (replaceable in tests)
+	mgr, err := newStartManagerFn(logger, clusterName)
 	if err != nil {
 		return fmt.Errorf("failed to create cluster manager: %w", err)
 	}
@@ -129,7 +148,7 @@ func runE(cmd *cobra.Command, ctx context.Context, logger *log.Logger, streams c
 func checkDockerDaemon(ctx context.Context, logger *log.Logger) error {
 	// Create a temporary manager to test Docker connectivity
 	// This is a lightweight check before we do any real work
-	tempMgr, err := cluster.New(logger, "temp-check")
+	tempMgr, err := cluster.New(logger, "temp-check", dockercli.New(logger))
 	if err != nil {
 		return err
 	}

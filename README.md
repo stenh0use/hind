@@ -120,7 +120,6 @@ nomad run jobs/example.hcl
 ```bash
 ./bin/hind start [cluster-name]   # Create and start a cluster
   --clients int                   # Number of client nodes (default: 1)
-  --version string                # Hind image version to use (default: "latest")
   --timeout duration              # Timeout for starting cluster (default: 5m)
   --verbose                       # Enable verbose output
 

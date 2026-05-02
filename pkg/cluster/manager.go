@@ -11,7 +11,6 @@ import (
 	"github.com/stenh0use/hind/pkg/config"
 	"github.com/stenh0use/hind/pkg/file"
 	"github.com/stenh0use/hind/pkg/provider"
-	"github.com/stenh0use/hind/pkg/provider/dockercli"
 )
 
 // Manager handles cluster lifecycle operations.
@@ -35,7 +34,14 @@ func (m *Manager) SetConfig(cfg *config.Cluster) {
 
 // New creates a new cluster manager with the given name and default configuration.
 // It initializes the file manager, provider, and cluster configuration for the specified cluster name.
-func New(logger *log.Logger, name string) (*Manager, error) {
+func New(logger *log.Logger, name string, client provider.Client) (*Manager, error) {
+	if err := ValidateClusterName(name); err != nil {
+		return nil, fmt.Errorf("invalid cluster name %q: %w", name, err)
+	}
+	if client == nil {
+		return nil, fmt.Errorf("provider client cannot be nil")
+	}
+
 	cfg, err := newClusterConfig(name, release.Latest().Hind)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create default cluster config for '%s': %w", name, err)
@@ -49,10 +55,10 @@ func New(logger *log.Logger, name string) (*Manager, error) {
 
 	m := &Manager{
 		logger:     logger,
-		provider:   dockercli.New(logger),
+		provider:   client,
 		config:     cfg,
 		fm:         fm,
-		configFile: file.JoinPath(fm.GetRootDir(), ClusterConfigDir, name, ClusterConfigFile),
+		configFile: file.JoinPath(ClusterConfigDir, name, ClusterConfigFile),
 	}
 	return m, nil
 }
@@ -79,7 +85,7 @@ func (m *Manager) Start(ctx context.Context) (StartResult, error) {
 	} else {
 		// Use the config created by New() - it already has defaults
 		// Just ensure the directory exists
-		clusterDir := file.JoinPath(m.fm.GetRootDir(), ClusterConfigDir, m.config.Name)
+		clusterDir := file.JoinPath(ClusterConfigDir, m.config.Name)
 		if err := m.fm.EnsureDir(clusterDir); err != nil {
 			return StartResultCreated, fmt.Errorf("failed to create cluster dir: %w", err)
 		}
@@ -125,11 +131,14 @@ func (m *Manager) waitForContainersRunning(ctx context.Context, timeout time.Dur
 			return nil
 		}
 
-		// Check if context is done
+		timer := time.NewTimer(DefaultContainerPollInterval)
 		select {
 		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
 			return ctx.Err()
-		case <-time.After(DefaultContainerPollInterval):
+		case <-timer.C:
 			// Continue waiting
 		}
 	}
@@ -137,55 +146,76 @@ func (m *Manager) waitForContainersRunning(ctx context.Context, timeout time.Dur
 	return fmt.Errorf("timeout waiting for containers to reach running state")
 }
 
+type StopOptions struct {
+	Force   bool
+	Verbose bool
+}
+
+type StopResult struct {
+	StoppedCount        int
+	AlreadyStoppedCount int
+	FailedCount         int
+	FailedPreStopCount  int
+	Failures            []string
+	VerboseLines        []string
+}
+
+func (r StopResult) AlreadyStopped() bool {
+	return r.StoppedCount == 0 && r.FailedCount == 0 && r.AlreadyStoppedCount > 0
+}
+
 func (m *Manager) Stop(ctx context.Context) error {
-	// Load cluster config from disk if not already in memory
-	// This allows Stop to work even if Manager was created without loading config
-	if m.config == nil || m.config.Name == "" {
-		cfg, err := m.loadConfig()
-		if err != nil {
-			return fmt.Errorf("failed to load cluster config: %w", err)
-		}
-		m.config = cfg
+	_, err := m.StopWithOptions(ctx, StopOptions{})
+	return err
+}
+
+func (m *Manager) StopWithOptions(ctx context.Context, opts StopOptions) (StopResult, error) {
+	result := StopResult{}
+	if err := m.LoadPersistedConfig(); err != nil {
+		return result, err
 	}
 
-	// Track how many containers were stopped
-	stoppedCount := 0
-	alreadyStoppedCount := 0
-
-	// Stop each node container
 	for _, node := range m.config.Nodes {
+		if opts.Verbose {
+			result.VerboseLines = append(result.VerboseLines, fmt.Sprintf("Checking container '%s' status", node.Name))
+		}
 		containerInfo, err := m.provider.InspectContainer(ctx, node.Name)
-
-		// Skip if container doesn't exist
+		if err != nil {
+			return result, fmt.Errorf("failed to inspect container %s: %w", node.Name, err)
+		}
 		if containerInfo == nil {
-			m.logger.WithField("name", node.Name).Debug("container not found, skipping...")
-			continue
-		} else if err != nil {
-			return err
-		}
-
-		// Check current status and stop if running
-		if containerInfo.Status == provider.Running.String() {
-			m.logger.WithField("name", node.Name).Debug("stopping container")
-			if err := m.provider.StopContainer(ctx, node.Name); err != nil {
-				return fmt.Errorf("failed to stop container %s: %w", node.Name, err)
+			if opts.Verbose {
+				result.VerboseLines = append(result.VerboseLines, fmt.Sprintf("Container '%s' not found, skipping", node.Name))
 			}
-			m.logger.WithField("name", node.Name).Info("stopped container")
-			stoppedCount++
-		} else {
-			m.logger.WithField("name", node.Name).Debug("container already stopped")
-			alreadyStoppedCount++
+			continue
 		}
+
+		if containerInfo.Status == provider.Running.String() {
+			if opts.Verbose {
+				result.VerboseLines = append(result.VerboseLines, fmt.Sprintf("Stopping container '%s'", node.Name))
+			}
+			if opts.Force {
+				err = m.provider.KillContainer(ctx, node.Name)
+			} else {
+				err = m.provider.StopContainer(ctx, node.Name)
+			}
+			if err != nil {
+				result.FailedCount++
+				result.Failures = append(result.Failures, node.Name)
+				m.logger.Warnf("Failed to stop container '%s': %v", node.Name, err)
+				continue
+			}
+			result.StoppedCount++
+			continue
+		}
+
+		if containerInfo.Status == provider.Error.String() {
+			result.FailedPreStopCount++
+		}
+		result.AlreadyStoppedCount++
 	}
 
-	// Log summary
-	if stoppedCount == 0 && alreadyStoppedCount > 0 {
-		m.logger.Debug("all containers already stopped")
-	} else if stoppedCount > 0 {
-		m.logger.Debugf("stopped %d container(s)", stoppedCount)
-	}
-
-	return nil
+	return result, nil
 }
 
 func (m *Manager) Delete(ctx context.Context) error {
@@ -206,14 +236,16 @@ func (m *Manager) Delete(ctx context.Context) error {
 	// Delete cluster nodes
 	for _, node := range m.config.Nodes {
 		containerInfo, err := m.provider.InspectContainer(ctx, node.Name)
+		if err != nil {
+			return fmt.Errorf("failed to inspect container %s: %w", node.Name, err)
+		}
 		if containerInfo == nil {
 			m.logger.WithField("name", node.Name).Debug("container not found, skipping...")
 			continue
-		} else if err != nil {
-			return err
-		} else if containerInfo.Status == provider.Running.String() {
+		}
+		if containerInfo.Status == provider.Running.String() {
 			if err = m.provider.StopContainer(ctx, node.Name); err != nil {
-				return err
+				return fmt.Errorf("failed to stop container %s: %w", node.Name, err)
 			}
 		}
 
@@ -225,7 +257,10 @@ func (m *Manager) Delete(ctx context.Context) error {
 
 	// Check if network exists
 	netInfo, err := m.provider.InspectNetwork(ctx, m.config.Network.Name)
-	if err == nil && netInfo != nil {
+	if err != nil {
+		return fmt.Errorf("failed to inspect network %s: %w", m.config.Network.Name, err)
+	}
+	if netInfo != nil {
 		if err := m.provider.DeleteNetwork(ctx, m.config.Network.Name); err != nil {
 			return fmt.Errorf("failed to delete network: %w", err)
 		}
@@ -240,16 +275,20 @@ func (m *Manager) Delete(ctx context.Context) error {
 	return nil
 }
 
-func (m *Manager) Get(ctx context.Context) (*provider.ClusterInfo, error) {
-	state := &provider.ClusterInfo{}
+func (m *Manager) Get(ctx context.Context) (*ClusterInfo, error) {
+	state := &ClusterInfo{}
 
-	// Use in-memory config (don't load from disk)
-	// This allows Get() to work during reconciliation before config is saved
+	if err := m.LoadPersistedConfig(); err != nil {
+		return nil, err
+	}
+
 	networkInfo, err := m.provider.InspectNetwork(ctx, m.config.Network.Name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect network: %w", err)
 	}
-	state.Network = *networkInfo
+	if networkInfo != nil {
+		state.Network = *networkInfo
+	}
 
 	containerInfos := []provider.ContainerInfo{}
 	for _, node := range m.config.Nodes {
@@ -275,7 +314,29 @@ func (m *Manager) Provider() provider.Client {
 
 // ConfigFileExists checks if the cluster config file exists
 func (m *Manager) ConfigFileExists() bool {
+	if m.fm == nil {
+		return false
+	}
 	return m.fm.FileExists(m.configFile)
+}
+
+// LoadPersistedConfig loads cluster configuration from disk when available.
+// If no persisted config exists, the current in-memory config is left unchanged.
+func (m *Manager) LoadPersistedConfig() error {
+	if !m.ConfigFileExists() {
+		if m.config == nil || m.config.Name == "" {
+			return fmt.Errorf("cluster config not found")
+		}
+		return nil
+	}
+
+	cfg, err := m.loadConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load cluster config: %w", err)
+	}
+
+	m.config = cfg
+	return nil
 }
 
 // SetClientCount updates the number of client nodes in the cluster configuration
@@ -300,23 +361,7 @@ func (m *Manager) SetClientCount(ctx context.Context, count int) error {
 	}
 
 	for i := 0; i < count; i++ {
-		nomadClient := config.Node{
-			Name:    fmt.Sprintf("hind.%s.client.%.2d", name, i+1),
-			Kind:    config.NomadNode,
-			Role:    config.Client,
-			Network: m.config.Network.Name,
-			Image: config.Image{
-				Name: release.NomadClient.ImageName(),
-				Tag:  v.Hind,
-			},
-			Devices: []string{"/dev/fuse"},
-			Environment: map[string]string{
-				"CONSUL_AGENT_MODE":     "client",
-				"CONSUL_SERVER_ADDRESS": fmt.Sprintf("hind.%s.consul.%.2d", name, 1),
-				"NOMAD_AGENT_MODE":      "client",
-			},
-		}
-		newNodes = append(newNodes, nomadClient)
+		newNodes = append(newNodes, newNomadClientNode(name, m.config.Network.Name, v.Hind, i+1))
 	}
 
 	m.config.Nodes = newNodes
@@ -421,7 +466,6 @@ func (m *Manager) Scale(ctx context.Context, targetClientCount int) error {
 func (m *Manager) addClientNodes(count int) error {
 	m.logger.Debugf("Adding %d client node configs", count)
 
-	currentClientCount := m.CountClientNodes()
 	v, err := release.Get(m.config.Version)
 	if err != nil {
 		return fmt.Errorf("failed to get version: %w", err)
@@ -430,24 +474,8 @@ func (m *Manager) addClientNodes(count int) error {
 	name := m.config.Name
 
 	for i := 0; i < count; i++ {
-		nodeNum := currentClientCount + i + 1
-		nomadClient := config.Node{
-			Name:    fmt.Sprintf("hind.%s.client.%.2d", name, nodeNum),
-			Kind:    config.NomadNode,
-			Role:    config.Client,
-			Network: m.config.Network.Name,
-			Image: config.Image{
-				Name: release.NomadClient.ImageName(),
-				Tag:  v.Hind,
-			},
-			Devices: []string{"/dev/fuse"},
-			Environment: map[string]string{
-				"CONSUL_AGENT_MODE":     "client",
-				"CONSUL_SERVER_ADDRESS": fmt.Sprintf("hind.%s.consul.%.2d", name, 1),
-				"NOMAD_AGENT_MODE":      "client",
-			},
-		}
-		m.config.Nodes = append(m.config.Nodes, nomadClient)
+		nodeNum := nextClientNodeNumber(name, m.config.Nodes)
+		m.config.Nodes = append(m.config.Nodes, newNomadClientNode(name, m.config.Network.Name, v.Hind, nodeNum))
 	}
 
 	return nil

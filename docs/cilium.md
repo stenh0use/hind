@@ -6,11 +6,8 @@ The following setup is based on the Cosmonic [blog post](https://cosmonic.com/bl
 
 ## Enable Cilium
 
-Start a cluster with Cilium CNI enabled:
+Cilium cannot be enabled via `hind start` right now. The previous `--cni=cilium` flag was removed with the CNI package cleanup, so there is currently no supported CLI path to enable Cilium in `hind`.
 
-```bash
-./bin/hind start --cni=cilium
-```
 
 Check Cilium health status (may take 2-5 minutes to become fully healthy):
 

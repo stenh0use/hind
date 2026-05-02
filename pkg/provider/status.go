@@ -13,9 +13,3 @@ const (
 func (s Status) String() string {
 	return string(s)
 }
-
-type ClusterInfo struct {
-	Name       string
-	Containers []ContainerInfo
-	Network    NetworkInfo
-}

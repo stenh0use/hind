@@ -13,6 +13,7 @@ import (
 	"github.com/stenh0use/hind/pkg/build/image"
 	"github.com/stenh0use/hind/pkg/build/release"
 	"github.com/stenh0use/hind/pkg/cmd"
+	"github.com/stenh0use/hind/pkg/provider/dockercli"
 )
 
 const (
@@ -62,24 +63,31 @@ func runE(ctx context.Context, logger *log.Logger, streams cmd.IOStreams, flags 
 		kinds = []release.ImageKind{release.ImageKind(target)}
 	}
 
+	client := dockercli.New(logger)
+
 	for _, k := range kinds {
-		// For single image build, use the specified timeout
 		buildCtx, cancel := context.WithTimeout(ctx, flags.timeout)
-		defer cancel()
+		err := func() error {
+			defer cancel()
 
-		logger.WithField("timeout", flags.timeout).Debug("Building image with timeout")
-		fmt.Fprintf(streams.ErrOut, "Building %s image...\n", k)
+			logger.WithField("timeout", flags.timeout).Debug("Building image with timeout")
+			fmt.Fprintf(streams.ErrOut, "Building %s image...\n", k)
 
-		builder, err := image.NewBuilder(logger, k)
+			builder, err := image.NewBuilder(logger, client, k)
+			if err != nil {
+				return fmt.Errorf("failed to create builder for %s: %w", k, err)
+			}
+
+			if err := builder.BuildImage(buildCtx); err != nil {
+				return fmt.Errorf("failed to build %s image: %w", k, err)
+			}
+
+			fmt.Fprintf(streams.ErrOut, "Successfully built %s image\n", k)
+			return nil
+		}()
 		if err != nil {
-			return fmt.Errorf("failed to create builder for %s: %w", k, err)
+			return err
 		}
-
-		if err := builder.BuildImage(buildCtx); err != nil {
-			return fmt.Errorf("failed to build %s image: %w", k, err)
-		}
-
-		fmt.Fprintf(streams.ErrOut, "Successfully built %s image\n", k)
 	}
 
 	return nil

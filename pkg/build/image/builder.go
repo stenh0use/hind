@@ -7,16 +7,20 @@ import (
 
 	"github.com/apex/log"
 	"github.com/stenh0use/hind/pkg/build/image/files"
-	"github.com/stenh0use/hind/pkg/build/image/internal/docker"
 	"github.com/stenh0use/hind/pkg/build/release"
+	"github.com/stenh0use/hind/pkg/provider"
 )
 
+// Builder orchestrates building a single hind Docker image via a provider.Client.
 type Builder struct {
 	logger *log.Logger
+	client provider.Client
 	image  Image
 }
 
-func NewBuilder(logger *log.Logger, kind release.ImageKind) (*Builder, error) {
+// NewBuilder constructs a Builder for the given image kind, using the provided
+// provider.Client for all runtime Docker interactions.
+func NewBuilder(logger *log.Logger, client provider.Client, kind release.ImageKind) (*Builder, error) {
 	image, err := NewImage(kind)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create image definition: %w", err)
@@ -24,10 +28,13 @@ func NewBuilder(logger *log.Logger, kind release.ImageKind) (*Builder, error) {
 
 	return &Builder{
 		logger: logger,
+		client: client,
 		image:  image,
 	}, nil
 }
 
+// BuildImage builds the image, writing build files to a temporary directory and
+// delegating the Docker build to the provider client.
 func (b *Builder) BuildImage(ctx context.Context) error {
 	if err := b.checkDependencies(ctx); err != nil {
 		return fmt.Errorf("dependency check failed: %w", err)
@@ -42,42 +49,37 @@ func (b *Builder) BuildImage(ctx context.Context) error {
 		return fmt.Errorf("failed to write build files for %s: %w", b.image.Kind, err)
 	}
 
-	imageName := b.image.Kind.ImageName()
-	dockerImg := docker.NewImage(b.logger, imageName, b.image.Release)
-
 	buildArgs, err := b.image.buildArgs()
 	if err != nil {
 		return fmt.Errorf("failed to generate build args: %w", err)
 	}
 
-	dockerImg.UpdateBuildOptions(
-		&docker.BuildOptions{
-			ContextDir: buildFiles.BuildDir(),
-			BuildArgs:  buildArgs,
-		})
-
-	_, err = dockerImg.BuildImage(ctx)
+	result, err := b.client.BuildImage(ctx, provider.BuildImageOptions{
+		Name:       b.image.Kind.ImageName(),
+		Tag:        b.image.Release,
+		ContextDir: buildFiles.BuildDir(),
+		BuildArgs:  buildArgs,
+		WithCache:  false,
+		Platform:   "",
+	})
 	if err != nil {
 		return fmt.Errorf("failed to build image %s: %w", b.image.Kind, err)
 	}
 
-	b.logger.WithField("image", fmt.Sprintf("%s:%s", b.image.Name, b.image.Release)).
-		Info("Successfully built image")
+	b.logger.WithField("image", result.ImageRef).Info("Successfully built image")
 	return nil
 }
 
-// checkDependencies implements feature requirement for dependency validation
+// checkDependencies verifies that required base images exist locally before building.
 func (b *Builder) checkDependencies(ctx context.Context) error {
 	if b.image.BaseImage.Pull {
-		// Base image is from registry (e.g., debian:bullseye-slim), no local dependency
+		// Base image is from registry (e.g., debian:bullseye-slim), no local dependency.
 		return nil
 	}
 
 	sanitizedName, _ := strings.CutPrefix(b.image.BaseImage.Name, release.ImageRegistry+"/")
 
-	i := docker.NewImage(b.logger, sanitizedName, b.image.BaseImage.Tag)
-
-	exists, err := i.TagExists(ctx)
+	exists, err := b.client.TagExists(ctx, sanitizedName, b.image.BaseImage.Tag)
 	if err != nil {
 		return fmt.Errorf("failed to check tag exists: %w", err)
 	}
