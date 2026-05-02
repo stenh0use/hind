@@ -1,11 +1,15 @@
 # Team Backlog
 
-Closed items: `.team/done/
+Closed items: `.team/done/`
 
-| ID | Title | Priority | Size | Source | Spec |
-|----|-------|----------|------|--------|------|
-| B-017 | Close `hind-stop.feature` behavior gaps | P2 | L | B-015 audit | `B-015.md` |
-| B-019 | Enforce `default-cluster.feature` profile-selection contracts | P2 | M | B-015 audit | `B-015.md` |
-| B-020 | Fix all `go` test files that use duplicate mocks | P3 | S | User | `S-020.md` |
-| B-021 | Address B-013 staff review additional observations | P3 | S | B-013 review | `S-021.md` |
-| B-022 | Refactor `pkg/build/release` for a more ergonomic interface | - | - | User | `S-022.md` |
+| ID | Title | Type | Priority | Size | Source | Spec |
+|----|-------|------|----------|------|--------|------|
+| W-026 | Add GitHub Actions CI for pre-merge checks | maintenance | P1 | S | User | `W-026.md` |
+| W-017 | Close `hind-stop.feature` behavior gaps | feature | P2 | L | B-015 audit | `W-015.md` |
+| W-019 | Enforce `default-cluster.feature` profile-selection contracts | feature | P2 | M | B-015 audit | `W-015.md` |
+| W-022 | Refactor `pkg/build/release` for a more ergonomic interface | maintenance | P2 | M | User | `W-022.md` |
+| W-020 | Fix all `go` test files that use duplicate mocks | maintenance | P3 | S | User | `W-020.md` |
+| W-021 | Address B-013 staff review additional observations | maintenance | P3 | S | B-013 review | `W-021.md` |
+| W-023 | Allow users to pass arbitrary package versions to `hind build` | feature | P3 | M | User | `W-023.md` |
+| W-024 | Allow users to pass arbitrary package versions to `hind start` | feature | P3 | M | User | `W-024.md` |
+| W-025 | Publish container images to an OCI registry on version update | feature | P4 | XL | User | `W-025.md` |
