@@ -24,7 +24,7 @@ type Client interface {
 	ListContainers(ctx context.Context, filters []string) ([]ContainerInfo, error)
 
 	// Image methods
-	BuildImage(ctx context.Context, opts BuildImageOptions) (string, error)
+	BuildImage(ctx context.Context, opts BuildImageOptions) (BuildImageResult, error)
 	TagExists(ctx context.Context, name string, tag string) (bool, error)
 	PullImage(ctx context.Context, name string, tag string) error
 

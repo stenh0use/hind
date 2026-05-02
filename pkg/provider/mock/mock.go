@@ -16,7 +16,7 @@ type ClientStub struct {
 	DeleteContainerFn  func(context.Context, string) error
 	InspectContainerFn func(context.Context, string) (*provider.ContainerInfo, error)
 	ListContainersFn   func(context.Context, []string) ([]provider.ContainerInfo, error)
-	BuildImageFn       func(context.Context, provider.BuildImageOptions) (string, error)
+	BuildImageFn       func(context.Context, provider.BuildImageOptions) (provider.BuildImageResult, error)
 	TagExistsFn        func(context.Context, string, string) (bool, error)
 	PullImageFn        func(context.Context, string, string) error
 	CreateNetworkFn    func(context.Context, config.Network) (string, error)
@@ -74,11 +74,11 @@ func (c *ClientStub) ListContainers(ctx context.Context, filters []string) ([]pr
 	return nil, nil
 }
 
-func (c *ClientStub) BuildImage(ctx context.Context, opts provider.BuildImageOptions) (string, error) {
+func (c *ClientStub) BuildImage(ctx context.Context, opts provider.BuildImageOptions) (provider.BuildImageResult, error) {
 	if c.BuildImageFn != nil {
 		return c.BuildImageFn(ctx, opts)
 	}
-	return "", nil
+	return provider.BuildImageResult{}, nil
 }
 
 func (c *ClientStub) TagExists(ctx context.Context, name string, tag string) (bool, error) {
