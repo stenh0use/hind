@@ -28,3 +28,6 @@ jobs:
 
       - name: Build CLI
         run: make hind-cli
+
+      - name: Build Images
+        run: ./bin/hind build all
