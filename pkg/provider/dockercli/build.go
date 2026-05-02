@@ -15,7 +15,7 @@ const metadataFileName = "metadata.json"
 
 // buildMetadata holds the parsed content of the docker buildx metadata.json file.
 type buildMetadata struct {
-	ContainerImageDigest string `json:"containerimage.config.digest"`
+	ContainerImageDigest string `json:"containerimage.digest"`
 	ImageName            string `json:"image.name"`
 }
 
