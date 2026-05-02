@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/apex/log/handlers/discard"
 
 	"github.com/stenh0use/hind/pkg/config"
+	"github.com/stenh0use/hind/pkg/file"
 	"github.com/stenh0use/hind/pkg/provider"
 	"github.com/stenh0use/hind/pkg/provider/mock"
 )
@@ -55,10 +57,26 @@ func TestStopWithOptions(t *testing.T) {
 				return nil
 			}
 
+			root := t.TempDir()
+			fm, err := file.New(root)
+			if err != nil {
+				t.Fatalf("file.New() error = %v", err)
+			}
+			cfg := &config.Cluster{Name: tt.name, Nodes: []config.Node{{Name: "n1"}, {Name: "n2"}}}
+			data, err := json.Marshal(cfg)
+			if err != nil {
+				t.Fatalf("json.Marshal() error = %v", err)
+			}
+			configPath := file.JoinPath(ClusterConfigDir, tt.name, ClusterConfigFile)
+			if err := fm.WriteFile(configPath, data); err != nil {
+				t.Fatalf("WriteFile() error = %v", err)
+			}
 			m := &Manager{
-				logger:   &log.Logger{Handler: discard.New(), Level: log.ErrorLevel},
-				provider: client,
-				config:   &config.Cluster{Name: tt.name, Nodes: []config.Node{{Name: "n1"}, {Name: "n2"}}},
+				logger:     &log.Logger{Handler: discard.New(), Level: log.ErrorLevel},
+				provider:   client,
+				config:     cfg,
+				fm:         fm,
+				configFile: configPath,
 			}
 
 			res, err := m.StopWithOptions(context.Background(), StopOptions{Force: tt.force})

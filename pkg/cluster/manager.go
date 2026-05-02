@@ -220,15 +220,16 @@ func (m *Manager) StopWithOptions(ctx context.Context, opts StopOptions) (StopRe
 
 func (m *Manager) Delete(ctx context.Context) error {
 	existed := m.ConfigFileExists()
-
-	if existed {
-		// Load existing config, else just use the config created by New()
-		cfg, err := m.loadConfig()
-		if err != nil {
-			return fmt.Errorf("failed to load cluster config: %w", err)
-		}
-		m.config = cfg
+	if !existed {
+		return fmt.Errorf("cluster '%s' not found", m.config.Name)
 	}
+
+	// Load existing config, else just use the config created by New()
+	cfg, err := m.loadConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load cluster config: %w", err)
+	}
+	m.config = cfg
 
 	// TODO: make delete idempotent
 
@@ -321,13 +322,12 @@ func (m *Manager) ConfigFileExists() bool {
 }
 
 // LoadPersistedConfig loads cluster configuration from disk when available.
-// If no persisted config exists, the current in-memory config is left unchanged.
 func (m *Manager) LoadPersistedConfig() error {
 	if !m.ConfigFileExists() {
-		if m.config == nil || m.config.Name == "" {
-			return fmt.Errorf("cluster config not found")
+		if m.config != nil && m.config.Name != "" {
+			return fmt.Errorf("cluster '%s' not found", m.config.Name)
 		}
-		return nil
+		return fmt.Errorf("cluster config not found")
 	}
 
 	cfg, err := m.loadConfig()
