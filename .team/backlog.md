@@ -2,8 +2,8 @@
 
 Closed items: `.team/done/`
 
-| ID | Title | Type | Priority | Size | Source | Spec |
-|----|-------|------|----------|------|--------|------|
+|  ID   | Title | Type | Priority | Size | Source | Spec |
+|-------|-------|------|----------|------|--------|------|
 | W-026 | Add GitHub Actions CI for pre-merge checks | maintenance | P1 | S | User | `W-026.md` |
 | W-017 | Close `hind-stop.feature` behavior gaps | feature | P2 | L | B-015 audit | `W-015.md` |
 | W-019 | Enforce `default-cluster.feature` profile-selection contracts | feature | P2 | M | B-015 audit | `W-015.md` |
@@ -14,3 +14,5 @@ Closed items: `.team/done/`
 | W-024 | Allow users to pass arbitrary package versions to `hind start` | feature | P3 | M | User | `W-024.md` |
 | W-025 | Publish container images to an OCI registry on version update | feature | P4 | XL | User | `W-025.md` |
 | W-027 | Add ID value to cluster nodes `pkg/cluster/types.go` | maintenance | - | - | User | `W-027.md` |
+| W-028 | Migrate `*_test.go` test cases to `stretchr/testify` | maintenance | - | - | User | - |
+
