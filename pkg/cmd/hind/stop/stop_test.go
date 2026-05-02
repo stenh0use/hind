@@ -80,6 +80,13 @@ func TestRunEMessageContracts(t *testing.T) {
 			wantLines: []string{"Failed to stop container 'n2'", "Cluster 'default' partially stopped"},
 		},
 		{
+			name:         "force with partial failure still errors",
+			force:        true,
+			result:       cluster.StopResult{StoppedCount: 1, FailedCount: 1, Failures: []string{"n2"}},
+			wantLines:    []string{"Failed to stop container 'n2'", "Cluster 'default' partially stopped"},
+			wantForceOpt: true,
+		},
+		{
 			name:      "unhealthy pre-failed",
 			result:    cluster.StopResult{AlreadyStoppedCount: 1, FailedPreStopCount: 1},
 			wantLines: []string{"Cluster 'default' stopped (some containers were already failed)"},
@@ -109,7 +116,14 @@ func TestRunEMessageContracts(t *testing.T) {
 			streams := cmd.IOStreams{Out: io.Discard, ErrOut: errBuf}
 
 			err := runE(context.Background(), testLogger(), streams, DefaultStopTimeout, tt.force, tt.verbose, "")
-			if err != nil {
+			if tt.name == "partial failure warnings" || tt.name == "force with partial failure still errors" {
+				if err == nil {
+					t.Fatal("runE() expected error for partial failure")
+				}
+				if !strings.Contains(err.Error(), "failed to stop 1 container(s)") {
+					t.Fatalf("runE() error = %v", err)
+				}
+			} else if err != nil {
 				t.Fatalf("runE() error = %v", err)
 			}
 

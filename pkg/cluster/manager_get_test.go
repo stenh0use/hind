@@ -80,19 +80,36 @@ func TestManagerGet_ReturnsInspectNetworkError(t *testing.T) {
 	t.Parallel()
 
 	wantErr := errors.New("docker daemon unavailable")
+	root := t.TempDir()
+	fm, err := file.New(root)
+	if err != nil {
+		t.Fatalf("file.New() error = %v", err)
+	}
+	cfg := &config.Cluster{
+		Name:    "demo",
+		Network: config.Network{Name: "hind.demo"},
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	configPath := file.JoinPath(ClusterConfigDir, "demo", ClusterConfigFile)
+	if err := fm.WriteFile(configPath, data); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
 	m := &Manager{
 		provider: &mock.ClientStub{
 			InspectNetworkFn: func(ctx context.Context, name string) (*provider.NetworkInfo, error) {
 				return nil, wantErr
 			},
 		},
-		config: &config.Cluster{
-			Name:    "demo",
-			Network: config.Network{Name: "hind.demo"},
-		},
+		config:     cfg,
+		fm:         fm,
+		configFile: configPath,
 	}
 
-	_, err := m.Get(context.Background())
+	_, err = m.Get(context.Background())
 	if err == nil {
 		t.Fatal("Get() expected error, got nil")
 	}
@@ -108,6 +125,25 @@ func TestManagerGet_ReturnsInspectContainerError(t *testing.T) {
 	t.Parallel()
 
 	wantErr := errors.New("inspect container failed")
+	root := t.TempDir()
+	fm, err := file.New(root)
+	if err != nil {
+		t.Fatalf("file.New() error = %v", err)
+	}
+	cfg := &config.Cluster{
+		Name:    "demo",
+		Network: config.Network{Name: "hind.demo"},
+		Nodes:   []config.Node{{Name: "hind.demo.consul.01"}},
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	configPath := file.JoinPath(ClusterConfigDir, "demo", ClusterConfigFile)
+	if err := fm.WriteFile(configPath, data); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
 	m := &Manager{
 		provider: &mock.ClientStub{
 			InspectNetworkFn: func(ctx context.Context, name string) (*provider.NetworkInfo, error) {
@@ -117,14 +153,12 @@ func TestManagerGet_ReturnsInspectContainerError(t *testing.T) {
 				return nil, wantErr
 			},
 		},
-		config: &config.Cluster{
-			Name:    "demo",
-			Network: config.Network{Name: "hind.demo"},
-			Nodes:   []config.Node{{Name: "hind.demo.consul.01"}},
-		},
+		config:     cfg,
+		fm:         fm,
+		configFile: configPath,
 	}
 
-	_, err := m.Get(context.Background())
+	_, err = m.Get(context.Background())
 	if err == nil {
 		t.Fatal("Get() expected error, got nil")
 	}
@@ -277,7 +311,7 @@ func TestManagerStop_UsesPersistedTopology(t *testing.T) {
 	}
 }
 
-func TestManagerLoadPersistedConfig_MissingFileKeepsDefaults(t *testing.T) {
+func TestManagerLoadPersistedConfig_MissingFileReturnsNotFound(t *testing.T) {
 	t.Parallel()
 
 	m := &Manager{
@@ -288,12 +322,12 @@ func TestManagerLoadPersistedConfig_MissingFileKeepsDefaults(t *testing.T) {
 		},
 	}
 
-	if err := m.LoadPersistedConfig(); err != nil {
-		t.Fatalf("LoadPersistedConfig() unexpected error: %v", err)
+	err := m.LoadPersistedConfig()
+	if err == nil {
+		t.Fatal("LoadPersistedConfig() expected error when persisted config file is missing")
 	}
-
-	if m.config.Network.Name != "hind.demo-default" {
-		t.Fatalf("LoadPersistedConfig() changed defaults unexpectedly; got network %q", m.config.Network.Name)
+	if !strings.Contains(err.Error(), "cluster 'demo' not found") {
+		t.Fatalf("LoadPersistedConfig() error = %q, want missing-cluster error", err)
 	}
 }
 
@@ -310,6 +344,25 @@ func TestManagerStop_PropagatesInspectContainerError(t *testing.T) {
 	t.Parallel()
 
 	wantErr := errors.New("container inspect failed")
+	root := t.TempDir()
+	fm, err := file.New(root)
+	if err != nil {
+		t.Fatalf("file.New() error = %v", err)
+	}
+	cfg := &config.Cluster{
+		Name:    "demo",
+		Network: config.Network{Name: "hind.demo"},
+		Nodes:   []config.Node{{Name: "hind.demo.consul.01"}},
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	configPath := file.JoinPath(ClusterConfigDir, "demo", ClusterConfigFile)
+	if err := fm.WriteFile(configPath, data); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
 	m := &Manager{
 		logger: &log.Logger{Handler: discard.New(), Level: log.ErrorLevel},
 		provider: &mock.ClientStub{
@@ -318,14 +371,12 @@ func TestManagerStop_PropagatesInspectContainerError(t *testing.T) {
 				return nil, wantErr
 			},
 		},
-		config: &config.Cluster{
-			Name:    "demo",
-			Network: config.Network{Name: "hind.demo"},
-			Nodes:   []config.Node{{Name: "hind.demo.consul.01"}},
-		},
+		config:     cfg,
+		fm:         fm,
+		configFile: configPath,
 	}
 
-	err := m.Stop(context.Background())
+	err = m.Stop(context.Background())
 	if err == nil {
 		t.Fatal("Stop() expected error when InspectContainer returns error, got nil")
 	}
@@ -359,6 +410,14 @@ func TestManagerDelete_PropagatesInspectContainerError(t *testing.T) {
 		},
 		fm:         fm,
 		configFile: file.JoinPath(ClusterConfigDir, "demo", ClusterConfigFile),
+	}
+
+	data, err := json.Marshal(m.config)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if err := fm.WriteFile(m.configFile, data); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
 	}
 
 	err = m.Delete(context.Background())
@@ -399,6 +458,14 @@ func TestManagerDelete_PropagatesInspectNetworkError(t *testing.T) {
 		},
 		fm:         fm,
 		configFile: file.JoinPath(ClusterConfigDir, "demo", ClusterConfigFile),
+	}
+
+	data, err := json.Marshal(m.config)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if err := fm.WriteFile(m.configFile, data); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
 	}
 
 	err = m.Delete(context.Background())

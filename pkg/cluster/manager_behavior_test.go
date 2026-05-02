@@ -27,13 +27,25 @@ func newManagerForBehaviorTests(t *testing.T, clusterName string, cfg *config.Cl
 		t.Fatalf("file.New() error = %v", err)
 	}
 
-	return &Manager{
+	m := &Manager{
 		logger:     &log.Logger{Handler: discard.New(), Level: log.ErrorLevel},
 		provider:   stub,
 		config:     cfg,
 		fm:         fm,
 		configFile: file.JoinPath(ClusterConfigDir, clusterName, ClusterConfigFile),
 	}
+
+	if cfg != nil && cfg.Name != "" {
+		data, err := json.Marshal(cfg)
+		if err != nil {
+			t.Fatalf("json.Marshal() error = %v", err)
+		}
+		if err := m.fm.WriteFile(m.configFile, data); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+	}
+
+	return m
 }
 
 func TestManagerStart_ReturnsErrorWhenPersistedConfigInvalid(t *testing.T) {
@@ -112,14 +124,17 @@ func TestManagerStart_UsesPersistedConfigForReconcile(t *testing.T) {
 func TestManagerGet_ReturnsErrorWhenNoPersistedConfigAndNoDefaults(t *testing.T) {
 	t.Parallel()
 
-	m := newManagerForBehaviorTests(t, "demo", &config.Cluster{}, &mock.ClientStub{})
+	m := newManagerForBehaviorTests(t, "demo", &config.Cluster{Name: "demo"}, &mock.ClientStub{})
+	if err := m.fm.RemoveFile(m.configFile); err != nil {
+		t.Fatalf("RemoveFile() error = %v", err)
+	}
 
 	_, err := m.Get(context.Background())
 	if err == nil {
 		t.Fatal("Get() expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "cluster config not found") {
-		t.Fatalf("Get() error = %q, want missing-config error", err)
+	if !strings.Contains(err.Error(), "cluster 'demo' not found") {
+		t.Fatalf("Get() error = %q, want missing-cluster error", err)
 	}
 }
 
@@ -153,6 +168,23 @@ func TestManagerStop_AggregatesStopContainerError(t *testing.T) {
 	}
 	if len(result.Failures) != 1 || result.Failures[0] != nodeName {
 		t.Fatalf("Failures = %v, want [%s]", result.Failures, nodeName)
+	}
+}
+
+func TestManagerDelete_ReturnsNotFoundWhenConfigMissing(t *testing.T) {
+	t.Parallel()
+
+	m := newManagerForBehaviorTests(t, "ghost", &config.Cluster{Name: "ghost"}, &mock.ClientStub{})
+	if err := m.fm.RemoveFile(m.configFile); err != nil {
+		t.Fatalf("RemoveFile() error = %v", err)
+	}
+
+	err := m.Delete(context.Background())
+	if err == nil {
+		t.Fatal("Delete() expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "cluster 'ghost' not found") {
+		t.Fatalf("Delete() error = %q, want missing-cluster error", err)
 	}
 }
 

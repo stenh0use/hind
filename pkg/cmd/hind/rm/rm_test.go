@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -71,13 +72,34 @@ func TestCommandFlags(t *testing.T) {
 }
 
 // stubDeleter is a no-op clusterDeleter used to bypass real Docker calls in tests.
-type stubDeleter struct{}
+type stubDeleter struct {
+	deleteErr error
+}
 
-func (s *stubDeleter) Delete(_ context.Context) error { return nil }
+func (s *stubDeleter) Delete(_ context.Context) error { return s.deleteErr }
 
 // TestRunE_ClearsActiveClusterOnDelete verifies that when the cluster being removed
 // is the currently active cluster, runE calls ClearActiveCluster so that subsequent
 // commands fall back to the "default" cluster resolution path.
+func TestRunE_ReturnsErrorWhenDeleteFails(t *testing.T) {
+	orig := newClusterManagerFn
+	newClusterManagerFn = func(_ *log.Logger, _ string) (clusterDeleter, error) {
+		return &stubDeleter{deleteErr: context.DeadlineExceeded}, nil
+	}
+	defer func() { newClusterManagerFn = orig }()
+
+	logger := &log.Logger{Handler: discard.New(), Level: log.ErrorLevel}
+	streams := cmd.IOStreams{Out: io.Discard, ErrOut: io.Discard}
+
+	err := runE(context.Background(), logger, streams, DefaultDeleteTimeout, "ghost")
+	if err == nil {
+		t.Fatal("runE expected error for missing cluster delete")
+	}
+	if !strings.Contains(err.Error(), "failed to delete cluster") {
+		t.Fatalf("runE error = %v", err)
+	}
+}
+
 func TestRunE_ClearsActiveClusterOnDelete(t *testing.T) {
 	// Redirect HOME so cluster state is isolated to this test.
 	tmpDir := t.TempDir()
