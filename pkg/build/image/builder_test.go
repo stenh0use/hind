@@ -241,6 +241,41 @@ func TestBuilder_CheckDependencies_CallsProviderTagExists(t *testing.T) {
 	}
 }
 
+func TestBuilder_BuildImage_CallsProviderBuildImage(t *testing.T) {
+	var capturedOpts provider.BuildImageOptions
+
+	stub := &providerStub{
+		buildImageFn: func(_ context.Context, opts provider.BuildImageOptions) (provider.BuildImageResult, error) {
+			capturedOpts = opts
+			return provider.BuildImageResult{Digest: "sha256:abc", ImageRef: "name:tag"}, nil
+		},
+	}
+
+	// Use consul: BaseImage.Pull=true so checkDependencies skips TagExists.
+	builder, err := NewBuilder(newTestLogger(), stub, release.Consul)
+	if err != nil {
+		t.Fatalf("NewBuilder: %v", err)
+	}
+
+	if err := builder.BuildImage(context.Background()); err != nil {
+		t.Fatalf("BuildImage returned unexpected error: %v", err)
+	}
+
+	expectedName := release.Consul.ImageName()
+	if capturedOpts.Name != expectedName {
+		t.Errorf("BuildImageOptions.Name = %q, want %q", capturedOpts.Name, expectedName)
+	}
+	if capturedOpts.Tag == "" {
+		t.Errorf("BuildImageOptions.Tag is empty, want non-empty release tag")
+	}
+	if capturedOpts.ContextDir == "" {
+		t.Errorf("BuildImageOptions.ContextDir is empty, want a non-empty path")
+	}
+	if len(capturedOpts.BuildArgs) == 0 {
+		t.Errorf("BuildImageOptions.BuildArgs is empty, want at least one entry")
+	}
+}
+
 func TestBuilder_CheckDependencies_SkipsWhenPull(t *testing.T) {
 	// consul has BaseImage.Pull=true — TagExists must never be called.
 	stub := &providerStub{

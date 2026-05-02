@@ -50,9 +50,6 @@ func (c *Client) BuildImage(ctx context.Context, opts provider.BuildImageOptions
 	}
 
 	imageRef := fmt.Sprintf("%s:%s", opts.Name, opts.Tag)
-	if imageRef == "" {
-		return provider.BuildImageResult{}, fmt.Errorf("imageRef is empty")
-	}
 
 	return provider.BuildImageResult{
 		Digest:   digest,
