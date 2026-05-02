@@ -15,4 +15,7 @@ Closed items: `.team/done/`
 | W-025 | Publish container images to an OCI registry on version update | feature | P4 | XL | User | `W-025.md` |
 | W-027 | Add ID value to cluster nodes `pkg/cluster/types.go` | maintenance | - | - | User | `W-027.md` |
 | W-028 | Migrate `*_test.go` test cases to `stretchr/testify` | maintenance | - | - | User | - |
-
+| W-029 | Add ingress controller for routing traffic to the internal network | feature | - | - | User | - |
+| W-030 | Build and publish releases to brew for macos install | feature | - | - | User | - |
+| W-031 | Add open subcommand to open the web ui of a component | feature | - | - | User | - |
+| W-032 | Add login subcommand to exec into an interactive shell in a node | feature | - | - | User | - |
