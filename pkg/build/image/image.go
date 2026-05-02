@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/stenh0use/hind/pkg/build/image/internal/docker"
 	"github.com/stenh0use/hind/pkg/build/release"
 )
 
@@ -106,38 +105,33 @@ func newVault(rel release.Info) Image {
 	}
 }
 
-func (i *Image) packagesToBuildArgs() ([]docker.BuildArg, error) {
+// packagesToBuildArgs converts the image's package list to a map of build arg
+// key-value pairs (e.g. CONSUL_VERSION -> "1.17.0").
+func (i *Image) packagesToBuildArgs() (map[string]string, error) {
 	rel, err := release.Get(i.Release)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get release %s: %w", i.Release, err)
 	}
 
-	args := make([]docker.BuildArg, 0, len(i.Packages))
+	args := make(map[string]string, len(i.Packages))
 	for _, name := range i.Packages {
 		if version, err := rel.GetPackage(name); err == nil {
-			args = append(args, docker.BuildArg{
-				Arg:   strings.ToUpper(name) + "_VERSION",
-				Value: version,
-			})
+			args[strings.ToUpper(name)+"_VERSION"] = version
 		}
 	}
 
 	return args, nil
 }
 
-func (i *Image) buildArgs() ([]docker.BuildArg, error) {
+// buildArgs returns the full set of build arguments for the image, including
+// package versions, the hind version, and the base image reference.
+func (i *Image) buildArgs() (map[string]string, error) {
 	args, err := i.packagesToBuildArgs()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate build args for image %s: %w", i.Name, err)
 	}
-	args = append(args, docker.BuildArg{
-		Arg:   "HIND_VERSION",
-		Value: i.Release,
-	})
-	args = append(args, docker.BuildArg{
-		Arg:   "BASE_IMAGE",
-		Value: fmt.Sprintf("%s:%s", i.BaseImage.Name, i.BaseImage.Tag),
-	})
+	args["HIND_VERSION"] = i.Release
+	args["BASE_IMAGE"] = fmt.Sprintf("%s:%s", i.BaseImage.Name, i.BaseImage.Tag)
 
 	return args, nil
 }

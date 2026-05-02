@@ -13,6 +13,7 @@ import (
 	"github.com/stenh0use/hind/pkg/build/image"
 	"github.com/stenh0use/hind/pkg/build/release"
 	"github.com/stenh0use/hind/pkg/cmd"
+	"github.com/stenh0use/hind/pkg/provider/dockercli"
 )
 
 const (
@@ -62,6 +63,8 @@ func runE(ctx context.Context, logger *log.Logger, streams cmd.IOStreams, flags 
 		kinds = []release.ImageKind{release.ImageKind(target)}
 	}
 
+	client := dockercli.New(logger)
+
 	for _, k := range kinds {
 		// For single image build, use the specified timeout
 		buildCtx, cancel := context.WithTimeout(ctx, flags.timeout)
@@ -70,7 +73,7 @@ func runE(ctx context.Context, logger *log.Logger, streams cmd.IOStreams, flags 
 		logger.WithField("timeout", flags.timeout).Debug("Building image with timeout")
 		fmt.Fprintf(streams.ErrOut, "Building %s image...\n", k)
 
-		builder, err := image.NewBuilder(logger, k)
+		builder, err := image.NewBuilder(logger, client, k)
 		if err != nil {
 			return fmt.Errorf("failed to create builder for %s: %w", k, err)
 		}
