@@ -2,21 +2,28 @@
 
 Execution-only handoffs.
 
-## BL-019 — Staff planning handoff
-- Team state path: `/Users/james/dev/github/stenh0use/hind/.claude/team/hind/`
-- Work item: BL-019 — enforce `default-cluster.feature` profile-selection contracts.
-- Mode: planning gate only (`staff plan sign-off`), no product-code implementation.
-- Required references:
-  - `/Users/james/dev/github/stenh0use/hind/.claude/team/hind/spec-BL-015.md` (default-cluster.feature gaps section)
-  - `/Users/james/dev/github/stenh0use/hind/features/default-cluster.feature`
-- Required planning output: append to `/Users/james/dev/github/stenh0use/hind/.claude/team/hind/log.md` under heading `BL-019 staff plan sign-off` (heading already inserted by team-lead):
-  - Scoped file/package change list
-  - Scenario-to-acceptance-test mapping
-  - Risk and rollback notes
-  - Go/No-Go recommendation
-- Gate reminder:
-  - No implementation starts until this staff plan gate is approved.
+## REBOOT HANDOFF — 2026-05-01
 
-## Next queued items
-- BL-016 engineer kickoff from approved staff plan.
-- BL-020 staff plan sign-off.
+### Overall status
+**Backlog fully clear.** All BL-012 through BL-020 are done and merged to `refactor-cleanup`. No open items.
+
+### Completed items (merged to refactor-cleanup)
+| ID | Description | Status |
+|----|-------------|--------|
+| BL-012 | Preserve architecture patterns | done |
+| BL-013 | Migration requirements internal/docker → pkg/provider | done |
+| BL-014 | Release versioning requirements | done |
+| BL-015 | Feature spec vs implementation audit | done |
+| BL-017 | hind-stop behavior gaps (force/verbose/partial/idempotent) | done, merged |
+| BL-018 | hind-build version/dependency messaging gaps | done, merged |
+| BL-019 | default-cluster profile-selection contracts | done, merged |
+| BL-020 | hind-releases feature normalization + implementation | done, merged at 5f62b20 |
+| BL-016 | hind-start behavior gaps | done, merged at 1e73036 |
+
+### Base branch
+`refactor-cleanup` at `/Users/james/dev/github/stenh0use/hind`
+
+### Key runtime files
+- `.claude/team/hind/work-items.md` — queue state
+- `.claude/team/hind/log.md` — full gate evidence and verdicts
+- `.claude/team/hind/bugs.md` — no active bugs
