@@ -88,3 +88,75 @@ When `force=true` and containers failed to kill, the `if force` branch fires fir
 2. Observe "force stopped" message and exit 0 — `FailedCount` path is never reached.
 
 **Expected:** Both paths should return a non-nil error when `result.FailedCount > 0`.
+
+---
+
+## BUG-004 — `hind rm` succeeds silently when cluster does not exist
+
+**Severity:** P2
+**Status:** open
+**Source:** QA audit of assigned commands (rm, start, build)
+
+**Root cause file:** `pkg/cluster/manager.go:221-276` (`Delete`)
+
+**Repro steps:**
+1. Ensure no cluster named `ghost` exists.
+2. Run `hind rm ghost`.
+3. Observe output and exit code.
+
+**Expected:** Command exits non-zero with an error such as `cluster 'ghost' does not exist`.
+
+**Actual:** Command exits 0 and prints `Cluster 'ghost' deleted successfully`. `Delete()` does not fail when config/resources are absent, so non-existent deletion is treated as success.
+
+---
+
+## BUG-005 — `hind start` never returns `StartResultAlreadyRunning`
+
+**Severity:** P3
+**Status:** open
+**Source:** QA audit of assigned commands (rm, start, build)
+
+**Root cause file:** `pkg/cluster/manager.go:72-108` (`Start`)
+
+**Repro steps:**
+1. Run `hind start mycluster`.
+2. Run `hind start mycluster` again while already fully running.
+
+**Expected:** Already-running no-op path should return `StartResultAlreadyRunning` and avoid redundant connection-info output.
+
+**Actual:** Existing-cluster path always returns `StartResultResumed`, even when reconcile has no actions. `StartResultAlreadyRunning` appears to be dead/unused.
+
+---
+
+## BUG-006 — `hind build` wrong-arg error message uses slice formatting
+
+**Severity:** P3
+**Status:** open
+**Source:** QA audit of assigned commands (rm, start, build)
+
+**Root cause file:** `pkg/cmd/hind/build/build.go:39`
+
+**Repro steps:**
+1. Run `hind build` (no args), or `hind build a b`.
+
+**Expected:** Error should report argument count cleanly (e.g. `received 0` / `received 2`) or use Cobra's default exact-args error.
+
+**Actual:** Custom message uses `%s` with `[]string`, producing messages like `accepts 1 arg, received []` or `[a b]`.
+
+---
+
+## BUG-007 — `hind set profile` writes success message to stderr
+
+**Severity:** P3
+**Status:** open
+**Source:** QA audit of assigned commands (get, list, stop, set profile)
+
+**Root cause file:** `pkg/cmd/hind/set/set.go:42`
+
+**Repro steps:**
+1. Run `hind set profile <existing-cluster>`.
+2. Redirect stderr to `/dev/null`.
+
+**Expected:** Success output should be on stdout if treated as user-facing command result.
+
+**Actual:** Success message is written to `streams.ErrOut`, so it disappears when stderr is redirected.
