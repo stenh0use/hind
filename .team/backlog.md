@@ -13,3 +13,4 @@ Closed items: `.team/done/`
 | W-023 | Allow users to pass arbitrary package versions to `hind build` | feature | P3 | M | User | `W-023.md` |
 | W-024 | Allow users to pass arbitrary package versions to `hind start` | feature | P3 | M | User | `W-024.md` |
 | W-025 | Publish container images to an OCI registry on version update | feature | P4 | XL | User | `W-025.md` |
+| W-027 | Add ID value to cluster nodes `pkg/cluster/types.go` | maintenance | - | - | User | `W-027.md` |
