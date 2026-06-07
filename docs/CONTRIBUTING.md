@@ -9,6 +9,7 @@ Thank you for your interest in contributing to hind! This guide will help you ge
 - Go 1.21 or later
 - Docker or compatible container runtime
 - Make
+- golangci-lint (v1.64.7 or later)
 
 ### Initial Setup
 
@@ -43,6 +44,11 @@ make hind-cli
 # Run tests
 make test
 
+# Run e2e lifecycle tests for CLI/runtime boundaries (no mocks)
+make test-e2e
+# or iterate on one case
+make test-e2e-one TEST=TestE2E_Lifecycle_BuildStartListStopRm
+
 # Test manually
 ./bin/hind start --profile=test
 ./bin/hind get test
@@ -57,8 +63,11 @@ Before committing, ensure your code passes all quality checks:
 # Format code
 go fmt ./...
 
-# Run linter
+# Run basic static checks
 go vet ./...
+
+# Run lint gate (must pass before commit)
+golangci-lint run
 
 # Run tests
 go test ./...
@@ -66,6 +75,15 @@ go test ./...
 # Or use the convenience target
 make test
 ```
+
+To install golangci-lint locally:
+
+```bash
+brew install golangci-lint
+# or: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.7
+```
+
+CI enforces golangci-lint on pull requests, so local runs should match CI expectations.
 
 ### 4. Commit Your Changes
 

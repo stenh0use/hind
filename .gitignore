@@ -3,6 +3,10 @@
 TODO
 
 skills-lock.json
+.agents/
 .claude/skills/golang-pro/
+.claude/skills/improve-codebase-architecture
 .claude/worktrees/
 .worktrees/
+.team/
+.claude/agent-memory
