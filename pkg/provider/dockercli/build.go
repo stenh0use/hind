@@ -49,11 +49,9 @@ func (c *Client) BuildImage(ctx context.Context, opts provider.BuildImageOptions
 		return provider.BuildImageResult{}, err
 	}
 
-	imageRef := fmt.Sprintf("%s:%s", opts.Name, opts.Tag)
-
 	return provider.BuildImageResult{
 		Digest:   digest,
-		ImageRef: imageRef,
+		ImageRef: fmt.Sprintf("%s:%s", opts.Name, opts.Tag),
 	}, nil
 }
 
@@ -112,6 +110,8 @@ func readDigestFromMetadata(path string) (string, error) {
 }
 
 // TagExists reports whether the given image name:tag exists in the local Docker image store.
+// NOTE: This currently bypasses c.executor and calls baseClientCmd directly, so tests
+// cannot intercept this Docker invocation via the CommandExecutor seam.
 func (c *Client) TagExists(ctx context.Context, name string, tag string) (bool, error) {
 	if name == "" {
 		return false, fmt.Errorf("image name is required")

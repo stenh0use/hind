@@ -3,7 +3,6 @@ package mock
 import (
 	"context"
 
-	"github.com/stenh0use/hind/pkg/config"
 	"github.com/stenh0use/hind/pkg/provider"
 )
 
@@ -19,7 +18,7 @@ type ClientStub struct {
 	BuildImageFn       func(context.Context, provider.BuildImageOptions) (provider.BuildImageResult, error)
 	TagExistsFn        func(context.Context, string, string) (bool, error)
 	PullImageFn        func(context.Context, string, string) error
-	CreateNetworkFn    func(context.Context, config.Network) (string, error)
+	CreateNetworkFn    func(context.Context, provider.NetworkSpec) (string, error)
 	DeleteNetworkFn    func(context.Context, string) error
 	ListNetworksFn     func(context.Context, []string) ([]provider.NetworkInfo, error)
 	InspectNetworkFn   func(context.Context, string) (*provider.NetworkInfo, error)
@@ -74,6 +73,10 @@ func (c *ClientStub) ListContainers(ctx context.Context, filters []string) ([]pr
 	return nil, nil
 }
 
+// BuildImage returns provider.BuildImageResult{} when BuildImageFn is nil.
+// That zero-value result is intentionally invalid per the B-013 build-image contract
+// (Digest/ImageRef must be non-empty), so tests that assert on result fields must
+// provide BuildImageFn explicitly.
 func (c *ClientStub) BuildImage(ctx context.Context, opts provider.BuildImageOptions) (provider.BuildImageResult, error) {
 	if c.BuildImageFn != nil {
 		return c.BuildImageFn(ctx, opts)
@@ -95,7 +98,7 @@ func (c *ClientStub) PullImage(ctx context.Context, name string, tag string) err
 	return nil
 }
 
-func (c *ClientStub) CreateNetwork(ctx context.Context, cfg config.Network) (string, error) {
+func (c *ClientStub) CreateNetwork(ctx context.Context, cfg provider.NetworkSpec) (string, error) {
 	if c.CreateNetworkFn != nil {
 		return c.CreateNetworkFn(ctx, cfg)
 	}

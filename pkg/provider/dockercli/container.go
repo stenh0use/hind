@@ -21,11 +21,38 @@ func baseContainerCmd(ctx context.Context) *exec.Cmd {
 	return baseClientCmd(ctx, containerCmd)
 }
 
-func normalizeContainerStatus(status string) string {
-	if strings.EqualFold(status, "exited") {
-		return provider.Stopped.String()
+// normalizeContainerStatus converts a raw docker status string to a provider.Status.
+// It handles both the typed docker daemon state words ("running", "exited", "stopped")
+// and the human-readable docker CLI Status column strings ("Up 2 hours",
+// "Exited (137) 3 days ago", "status: (running)").
+func normalizeContainerStatus(status string) provider.Status {
+	raw := strings.TrimSpace(strings.ToLower(status))
+
+	// Strip optional "status: " prefix and surrounding parens
+	raw = strings.TrimPrefix(raw, "status:")
+	raw = strings.TrimSpace(raw)
+	raw = strings.Trim(raw, "()")
+	raw = strings.TrimSpace(raw)
+
+	// The docker CLI Status column starts with "up" for running containers.
+	if strings.HasPrefix(raw, "up") {
+		return provider.Running
 	}
-	return status
+
+	// Typed daemon state words and the first word of verbose strings.
+	word := raw
+	if idx := strings.Index(raw, " "); idx >= 0 {
+		word = raw[:idx]
+	}
+
+	switch word {
+	case "running":
+		return provider.Running
+	case "exited", "stopped":
+		return provider.Stopped
+	default:
+		return provider.Error
+	}
 }
 
 // Create and start a container
@@ -37,7 +64,6 @@ func (c *Client) CreateContainer(ctx context.Context, cfg provider.ContainerSpec
 	cmd := baseContainerCmd(ctx)
 	cmd.Args = append(cmd.Args, "run")
 
-	// TODO: this needs to be moved to an opts abstraction
 	// Add standard Docker flags
 	cmd.Args = append(cmd.Args, "--cgroupns=private")
 	cmd.Args = append(cmd.Args, "--detach")
@@ -57,31 +83,18 @@ func (c *Client) CreateContainer(ctx context.Context, cfg provider.ContainerSpec
 		cmd.Args = append(cmd.Args, "--network", cfg.Network)
 	}
 
-	if cfg.Image.Name == "" {
-		return "", fmt.Errorf("image name is required")
-	}
-
-	var imgRef string
-	if cfg.Image.Digest != "" {
-		imgRef = fmt.Sprintf("%s:%s", cfg.Image.Name, cfg.Image.Digest)
-	} else if cfg.Image.Tag != "" {
-		imgRef = fmt.Sprintf("%s:%s", cfg.Image.Name, cfg.Image.Tag)
-	} else {
-		imgRef = cfg.Image.Name
+	if cfg.Image == "" {
+		return "", fmt.Errorf("image is required")
 	}
 	// add container name
 	if cfg.Name != "" {
 		cmd.Args = append(cmd.Args, "--name", cfg.Name)
 		cmd.Args = append(cmd.Args, "--hostname", cfg.Name)
 	}
-	// TODO add volumes
 	if cfg.Ports != nil {
 		for _, p := range cfg.Ports {
 			var publishPorts []string
 			// need to do error checking required values
-			if p.ListenAddress != "" {
-				publishPorts = append(publishPorts, p.ListenAddress)
-			}
 			if p.HostPort != 0 {
 				publishPorts = append(publishPorts, strconv.FormatInt(int64(p.HostPort), 10))
 			}
@@ -118,12 +131,18 @@ func (c *Client) CreateContainer(ctx context.Context, cfg provider.ContainerSpec
 		}
 	}
 
-	cmd.Args = append(cmd.Args, imgRef)
+	cmd.Args = append(cmd.Args, cfg.Image)
 
 	c.logger.WithField("command", cmd.String()).Debug("Running container create command")
 
 	id, err := cmd.Output()
 	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			dockerErr := strings.TrimSpace(string(exitErr.Stderr))
+			if dockerErr != "" {
+				return "", fmt.Errorf("failed to create container: %w: %s", err, dockerErr)
+			}
+		}
 		return "", fmt.Errorf("failed to create container: %w", err)
 	}
 	return string(id), nil
@@ -183,14 +202,16 @@ func (c *Client) KillContainer(ctx context.Context, name string) error {
 }
 
 // Delete a container
-// TODO: need options such as `-v` to remove anonymous volumes on delete
 func (c *Client) DeleteContainer(ctx context.Context, name string) error {
 	if name == "" {
 		return fmt.Errorf("name or id is required to delete a container")
 	}
 
 	cmd := baseContainerCmd(ctx)
-	cmd.Args = append(cmd.Args, "rm", name)
+	// --force allows removing running containers and is idempotent enough to
+	// survive a container auto-restarting between Inspect and rm. Stop is
+	// still attempted by the adapter for graceful shutdown.
+	cmd.Args = append(cmd.Args, "rm", "--force", name)
 
 	_, err := cmd.Output()
 	if err != nil {
@@ -267,7 +288,7 @@ func (c *Client) ListContainers(ctx context.Context, filters []string) ([]provid
 	var response []provider.ContainerInfo
 
 	cmd := baseContainerCmd(ctx)
-	cmd.Args = append(cmd.Args, "ls", "--format", "{{ . | json }}")
+	cmd.Args = append(cmd.Args, "ls", "--all", "--format", "{{ . | json }}")
 
 	for _, f := range filters {
 		cmd.Args = append(cmd.Args, "--filter", f)

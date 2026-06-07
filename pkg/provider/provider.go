@@ -2,8 +2,6 @@ package provider
 
 import (
 	"context"
-
-	"github.com/stenh0use/hind/pkg/config"
 )
 
 type Client interface {
@@ -30,7 +28,7 @@ type Client interface {
 
 	// Network methods
 	// Create a new docker network
-	CreateNetwork(ctx context.Context, cfg config.Network) (string, error)
+	CreateNetwork(ctx context.Context, cfg NetworkSpec) (string, error)
 	// Delete a network
 	DeleteNetwork(ctx context.Context, name string) error
 	// List networks

@@ -11,7 +11,6 @@ import (
 
 	"github.com/moby/moby/api/types/network"
 
-	"github.com/stenh0use/hind/pkg/config"
 	"github.com/stenh0use/hind/pkg/provider"
 )
 
@@ -22,7 +21,7 @@ func baseNetworkCmd(ctx context.Context) *exec.Cmd {
 }
 
 // Create a new docker network
-func (c *Client) CreateNetwork(ctx context.Context, cfg config.Network) (string, error) {
+func (c *Client) CreateNetwork(ctx context.Context, cfg provider.NetworkSpec) (string, error) {
 	if cfg.Name == "" {
 		return "", fmt.Errorf("name is required to create a network")
 	}

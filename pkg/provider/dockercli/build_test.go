@@ -6,11 +6,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/apex/log"
 	"github.com/apex/log/handlers/discard"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/stenh0use/hind/pkg/provider"
 )
 
@@ -72,12 +74,9 @@ func writeMetadataFile(t *testing.T, dir, digest string) {
 	t.Helper()
 	m := buildMetadata{ContainerImageDigest: digest}
 	data, err := json.Marshal(m)
-	if err != nil {
-		t.Fatalf("writeMetadataFile: marshal error: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, metadataFileName), data, 0o600); err != nil {
-		t.Fatalf("writeMetadataFile: write error: %v", err)
-	}
+	require.NoError(t, err, "writeMetadataFile: marshal error")
+	err = os.WriteFile(filepath.Join(dir, metadataFileName), data, 0o600)
+	require.NoError(t, err, "writeMetadataFile: write error")
 }
 
 func TestBuildImage_BuildxAbsent(t *testing.T) {
@@ -97,16 +96,10 @@ func TestBuildImage_BuildxAbsent(t *testing.T) {
 		ContextDir: tmpDir,
 	})
 
-	if err == nil {
-		t.Fatal("expected error when buildx is absent, got nil")
-	}
-	if !strings.Contains(err.Error(), "buildx") {
-		t.Errorf("expected error to contain 'buildx', got: %q", err.Error())
-	}
+	require.Error(t, err, "expected error when buildx is absent")
+	assert.Contains(t, err.Error(), "buildx")
 	// Verify no build command was executed (capturedRunArgs stays nil).
-	if exec.capturedRunArgs != nil {
-		t.Errorf("expected no build command to be run, but Run was called with: %v", exec.capturedRunArgs)
-	}
+	assert.Nil(t, exec.capturedRunArgs, "expected no build command to be run, but Run was called with: %v", exec.capturedRunArgs)
 }
 
 func TestBuildImage_Success(t *testing.T) {
@@ -135,28 +128,18 @@ func TestBuildImage_Success(t *testing.T) {
 		ContextDir: tmpDir,
 	})
 
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.Digest != wantDigest {
-		t.Errorf("Digest = %q, want %q", result.Digest, wantDigest)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, wantDigest, result.Digest)
 	wantImageRef := wantName + ":" + wantTag
-	if result.ImageRef != wantImageRef {
-		t.Errorf("ImageRef = %q, want %q", result.ImageRef, wantImageRef)
-	}
-	if !strings.HasPrefix(result.Digest, "sha256:") {
-		t.Errorf("Digest does not start with 'sha256:': %q", result.Digest)
-	}
+	assert.Equal(t, wantImageRef, result.ImageRef)
+	assert.True(t, len(result.Digest) > 7 && result.Digest[:7] == "sha256:", "Digest does not start with 'sha256:': %q", result.Digest)
 }
 
 func TestNew_SucceedsWithoutBuildx(t *testing.T) {
 	// New must not check for buildx; it must succeed regardless.
 	logger := newTestLogger()
 	client := New(logger)
-	if client == nil {
-		t.Error("New returned nil, want non-nil provider.Client")
-	}
+	assert.NotNil(t, client)
 }
 
 func TestBuildImage_EmptyDigestIsError(t *testing.T) {
@@ -182,9 +165,7 @@ func TestBuildImage_EmptyDigestIsError(t *testing.T) {
 		ContextDir: tmpDir,
 	})
 
-	if err == nil {
-		t.Fatal("expected error for empty digest, got nil")
-	}
+	require.Error(t, err, "expected error for empty digest")
 }
 
 func TestBuildImage_LoadFlagPresent(t *testing.T) {
@@ -204,13 +185,12 @@ func TestBuildImage_LoadFlagPresent(t *testing.T) {
 	client := newWithExecutor(newTestLogger(), exec)
 	ctx := context.Background()
 
-	if _, err := client.BuildImage(ctx, provider.BuildImageOptions{
+	_, err := client.BuildImage(ctx, provider.BuildImageOptions{
 		Name:       "myimage",
 		Tag:        "v1",
 		ContextDir: tmpDir,
-	}); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	})
+	require.NoError(t, err)
 
 	found := false
 	for _, arg := range exec.capturedRunArgs {
@@ -219,9 +199,7 @@ func TestBuildImage_LoadFlagPresent(t *testing.T) {
 			break
 		}
 	}
-	if !found {
-		t.Errorf("--load not found in build args: %v", exec.capturedRunArgs)
-	}
+	assert.True(t, found, "--load not found in build args: %v", exec.capturedRunArgs)
 }
 
 func TestBuildImage_PlatformOmittedWhenEmpty(t *testing.T) {
@@ -241,19 +219,16 @@ func TestBuildImage_PlatformOmittedWhenEmpty(t *testing.T) {
 	client := newWithExecutor(newTestLogger(), exec)
 	ctx := context.Background()
 
-	if _, err := client.BuildImage(ctx, provider.BuildImageOptions{
+	_, err := client.BuildImage(ctx, provider.BuildImageOptions{
 		Name:       "myimage",
 		Tag:        "v1",
 		ContextDir: tmpDir,
 		Platform:   "", // empty — must be omitted
-	}); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	})
+	require.NoError(t, err)
 
 	for _, arg := range exec.capturedRunArgs {
-		if arg == "--platform" {
-			t.Errorf("--platform should be absent when Platform is empty, but found in args: %v", exec.capturedRunArgs)
-		}
+		assert.NotEqual(t, "--platform", arg, "--platform should be absent when Platform is empty, but found in args: %v", exec.capturedRunArgs)
 	}
 }
 
@@ -274,14 +249,13 @@ func TestBuildImage_NoCacheWhenWithCacheFalse(t *testing.T) {
 	client := newWithExecutor(newTestLogger(), exec)
 	ctx := context.Background()
 
-	if _, err := client.BuildImage(ctx, provider.BuildImageOptions{
+	_, err := client.BuildImage(ctx, provider.BuildImageOptions{
 		Name:       "myimage",
 		Tag:        "v1",
 		ContextDir: tmpDir,
 		WithCache:  false,
-	}); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	})
+	require.NoError(t, err)
 
 	found := false
 	for _, arg := range exec.capturedRunArgs {
@@ -290,7 +264,5 @@ func TestBuildImage_NoCacheWhenWithCacheFalse(t *testing.T) {
 			break
 		}
 	}
-	if !found {
-		t.Errorf("--no-cache not found in args when WithCache=false: %v", exec.capturedRunArgs)
-	}
+	assert.True(t, found, "--no-cache not found in args when WithCache=false: %v", exec.capturedRunArgs)
 }
