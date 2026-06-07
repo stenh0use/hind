@@ -8,12 +8,12 @@ import (
 	"github.com/apex/log"
 	"github.com/spf13/cobra"
 
-	"github.com/stenh0use/hind/pkg/build/release"
 	"github.com/stenh0use/hind/pkg/cmd"
+	"github.com/stenh0use/hind/pkg/version"
 )
 
 // Version is the CLI version. Set at build time with -ldflags.
-var Version = release.Latest().Hind
+const Version = version.HindVersion
 
 // Commit is the git commit hash. Set at build time with -ldflags.
 var Commit = ""

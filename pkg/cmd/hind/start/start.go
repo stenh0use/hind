@@ -8,35 +8,46 @@ import (
 	"github.com/apex/log"
 	"github.com/spf13/cobra"
 
-	"github.com/stenh0use/hind/pkg/cluster"
+	"github.com/stenh0use/hind/pkg/cluster/domain"
+	"github.com/stenh0use/hind/pkg/cluster/orchestration"
+	"github.com/stenh0use/hind/pkg/cluster/persistence"
 	"github.com/stenh0use/hind/pkg/cmd"
+	"github.com/stenh0use/hind/pkg/cmd/hind/internal/cluster"
+	"github.com/stenh0use/hind/pkg/cmd/hind/internal/overrides"
 	"github.com/stenh0use/hind/pkg/provider/dockercli"
 )
 
 // DefaultStartTimeout is the default timeout for starting a cluster
 const DefaultStartTimeout = 5 * time.Minute
 
-// clusterStarter is the minimal interface required by runE to start a cluster.
-// It is satisfied by *cluster.Manager and can be replaced in tests to avoid Docker.
+// clusterStarter is the minimal interface required by runE.
 type clusterStarter interface {
-	ConfigFileExists() bool
-	SetClientCount(ctx context.Context, count int) error
-	Start(ctx context.Context) (cluster.StartResult, error)
-	CountClientNodes() int
+	Start(ctx context.Context, req orchestration.StartRequest) (domain.StartOutcome, error)
 	Scale(ctx context.Context, targetClientCount int) error
 }
 
-// newStartManagerFn is the factory used to create a clusterStarter for a given cluster
-// name. Tests may replace this variable to inject a stub without a real Docker daemon.
-var newStartManagerFn = func(logger *log.Logger, clusterName string) (clusterStarter, error) {
-	return cluster.New(logger, clusterName, dockercli.New(logger))
+// startServices bundles dependencies for runE.
+type startServices struct {
+	Orchestration clusterStarter
+	Active        persistence.ActiveRepository
+}
+
+var newStartServicesFn = func(logger *log.Logger, clusterName string) (startServices, error) {
+	svc, err := cluster.NewClusterServices(logger, clusterName)
+	if err != nil {
+		return startServices{}, err
+	}
+	return startServices{Orchestration: svc.Orchestration, Active: svc.Active}, nil
 }
 
 // flagpole holds all flags for the start command
 type flagpole struct {
-	timeout time.Duration
-	clients int
-	verbose bool
+	timeout       time.Duration
+	clients       int
+	verbose       bool
+	nomadVersion  string
+	consulVersion string
+	vaultVersion  string
 }
 
 // NewCommand creates the cluster start command
@@ -56,6 +67,9 @@ func NewCommand(logger *log.Logger, streams cmd.IOStreams) *cobra.Command {
 	command.Flags().DurationVar(&flags.timeout, "timeout", DefaultStartTimeout, "Timeout for starting the cluster")
 	command.Flags().IntVar(&flags.clients, "clients", 1, "Number of client nodes to create")
 	command.Flags().BoolVar(&flags.verbose, "verbose", false, "Enable verbose output")
+	command.Flags().StringVar(&flags.nomadVersion, "nomad-version", "", "One-shot Nomad package version override for this start invocation")
+	command.Flags().StringVar(&flags.consulVersion, "consul-version", "", "One-shot Consul package version override for this start invocation")
+	command.Flags().StringVar(&flags.vaultVersion, "vault-version", "", "One-shot Vault package version override for this start invocation")
 
 	return command
 }
@@ -64,104 +78,126 @@ func NewCommand(logger *log.Logger, streams cmd.IOStreams) *cobra.Command {
 // Tests may replace this variable to bypass the real Docker check.
 var checkDockerDaemonFn = checkDockerDaemon
 
-func runE(cmd *cobra.Command, ctx context.Context, logger *log.Logger, streams cmd.IOStreams, flags *flagpole, args []string) error {
-	// Get cluster name from args or use default
-	var clusterName string
-	if len(args) > 0 {
-		clusterName = args[0]
+func configureLogging(logger *log.Logger, flags *flagpole, clusterName string) {
+	if !flags.verbose {
+		return
 	}
-
-	// If no cluster name provided, try to get active cluster, fall back to "default"
-	if clusterName == "" {
-		activeCluster, err := cluster.GetActiveCluster()
-		if err != nil || activeCluster == "" {
-			logger.Debugf("Failed to get active cluster")
-			clusterName = "default"
-		} else {
-			clusterName = activeCluster
-			logger.Debugf("Using active cluster: %s", clusterName)
-		}
-	}
-
-	// Set log level based on verbose flag
-	if flags.verbose {
-		logger.Level = log.DebugLevel
-		logger.Debug("Verbose mode enabled")
-		logger.Debugf("Checking for existing cluster '%s'", clusterName)
-	}
-
-	// Create context with timeout
-	startCtx, cancel := context.WithTimeout(ctx, flags.timeout)
-	defer cancel()
-
-	// Check if Docker daemon is accessible first (replaceable via checkDockerDaemonFn in tests)
-	logger.Debug("Checking Docker daemon accessibility")
-	if err := checkDockerDaemonFn(startCtx, logger); err != nil {
-		return fmt.Errorf("Docker daemon is not accessible: %w", err)
-	}
-
-	// Create cluster manager via factory seam (replaceable in tests)
-	mgr, err := newStartManagerFn(logger, clusterName)
-	if err != nil {
-		return fmt.Errorf("failed to create cluster manager: %w", err)
-	}
-
-	// Start the cluster first (this loads config if exists, or uses defaults for new clusters)
-	// For new clusters, we need to set client count before starting
-	if !mgr.ConfigFileExists() && flags.clients != 1 {
-		if err := mgr.SetClientCount(startCtx, flags.clients); err != nil {
-			return fmt.Errorf("failed to set client count: %w", err)
-		}
-	}
-
-	// Start the cluster (handles create, resume, and idempotent cases)
-	result, err := mgr.Start(startCtx)
-	if err != nil {
-		return fmt.Errorf("failed to start cluster %q: %w", clusterName, err)
-	}
-
-	// If --clients flag was explicitly set for existing cluster, scale it
-	if result == cluster.StartResultResumed && cmd.Flags().Changed("clients") {
-		currentClientCount := mgr.CountClientNodes()
-		if flags.clients != currentClientCount {
-			logger.Debugf("Client count change requested: %d -> %d", currentClientCount, flags.clients)
-			if err := mgr.Scale(startCtx, flags.clients); err != nil {
-				return fmt.Errorf("failed to scale cluster: %w", err)
-			}
-		}
-	}
-
-	// Set this cluster as the active cluster
-	if err := cluster.SetActiveCluster(clusterName); err != nil {
-		logger.Warnf("Failed to set active cluster: %v", err)
-		// Don't fail the command if we can't set the active cluster
-	}
-
-	// Display connection information only for newly created or resumed clusters
-	if result != cluster.StartResultAlreadyRunning {
-		displayConnectionInfo(streams, clusterName)
-	}
-	return nil
+	logger.Level = log.DebugLevel
+	logger.Debug("Verbose mode enabled")
+	logger.Debugf("Checking for existing cluster '%s'", clusterName)
 }
 
-// checkDockerDaemon verifies the Docker daemon is accessible
-func checkDockerDaemon(ctx context.Context, logger *log.Logger) error {
-	// Create a temporary manager to test Docker connectivity
-	// This is a lightweight check before we do any real work
-	tempMgr, err := cluster.New(logger, "temp-check", dockercli.New(logger))
+func createStartServices(ctx context.Context, logger *log.Logger, clusterName string) (startServices, error) {
+	logger.Debug("Checking Docker daemon accessibility")
+	if err := checkDockerDaemonFn(ctx, logger); err != nil {
+		return startServices{}, fmt.Errorf("Docker daemon is not accessible: %w", err)
+	}
+
+	svc, err := newStartServicesFn(logger, clusterName)
+	if err != nil {
+		return startServices{}, fmt.Errorf("failed to create cluster manager: %w", err)
+	}
+
+	return svc, nil
+}
+
+func startOrResumeCluster(cmd *cobra.Command, ctx context.Context, logger *log.Logger, svc startServices, flags *flagpole, resolved overrides.Set, clusterName string) (domain.StartOutcome, error) {
+	req := orchestration.StartRequest{
+		ClientCount:   flags.clients,
+		NomadVersion:  resolved.Nomad.Value,
+		ConsulVersion: resolved.Consul.Value,
+		VaultVersion:  resolved.Vault.Value,
+	}
+	outcome, err := svc.Orchestration.Start(ctx, req)
+	if err != nil {
+		return domain.StartOutcomeCreated, fmt.Errorf("failed to start cluster %q: %w", clusterName, err)
+	}
+
+	// Post-start scale if resumed and --clients flag explicitly changed the count.
+	if outcome == domain.StartOutcomeResumed && cmd.Flags().Changed("clients") {
+		logger.Debugf("Client count change requested to: %d", flags.clients)
+		if err := svc.Orchestration.Scale(ctx, flags.clients); err != nil {
+			return domain.StartOutcomeCreated, fmt.Errorf("failed to scale cluster: %w", err)
+		}
+		return domain.StartOutcomeScaled, nil
+	}
+
+	return outcome, nil
+}
+
+func finalizeStartOutput(ctx context.Context, logger *log.Logger, streams cmd.IOStreams, svc startServices, resolved overrides.Set, clusterName string, outcome domain.StartOutcome) {
+	if err := svc.Active.SetActive(ctx, clusterName); err != nil {
+		logger.Warnf("Failed to set active cluster: %v", err)
+	}
+
+	if outcome != domain.StartOutcomeAlreadyRunning && outcome != domain.StartOutcomeNoOp {
+		displayConnectionInfo(streams, clusterName)
+	}
+
+	displayVersionOverrides(streams, resolved)
+}
+
+func runE(cmd *cobra.Command, ctx context.Context, logger *log.Logger, streams cmd.IOStreams, flags *flagpole, args []string) error {
+	clusterName := cluster.ResolveClusterNameFromFS(ctx, args)
+
+	configureLogging(logger, flags, clusterName)
+
+	// Resolve and validate version overrides BEFORE touching Docker so invalid
+	// input fails fast with no side effects. Cobra's Changed() distinguishes
+	// "flag unset" from "flag explicitly set to empty".
+	resolved, err := overrides.Resolve(overrides.FlagInputs{
+		NomadVersion:  flags.nomadVersion,
+		ConsulVersion: flags.consulVersion,
+		VaultVersion:  flags.vaultVersion,
+		NomadSet:      cmd.Flags().Changed("nomad-version"),
+		ConsulSet:     cmd.Flags().Changed("consul-version"),
+		VaultSet:      cmd.Flags().Changed("vault-version"),
+	}, overrides.OSEnvLookup)
 	if err != nil {
 		return err
 	}
 
-	// Try to list containers to verify Docker daemon is accessible
-	_, err = tempMgr.Provider().ListContainers(ctx, []string{})
+	startCtx, cancel := context.WithTimeout(ctx, flags.timeout)
+	defer cancel()
+
+	svc, err := createStartServices(startCtx, logger, clusterName)
+	if err != nil {
+		return err
+	}
+
+	if flags.verbose {
+		logger.Debugf("Resolved cluster name: %s", clusterName)
+	}
+
+	outcome, err := startOrResumeCluster(cmd, startCtx, logger, svc, flags, resolved, clusterName)
+	if err != nil {
+		return err
+	}
+
+	finalizeStartOutput(ctx, logger, streams, svc, resolved, clusterName, outcome)
+	return nil
+}
+
+// displayVersionOverrides writes one header + one line per overridden package
+// to streams.ErrOut, with `(from env)` attribution for env-sourced packages.
+// When no package is overridden, writes nothing.
+func displayVersionOverrides(streams cmd.IOStreams, r overrides.Set) {
+	for _, line := range overrides.RenderLines(r) {
+		fmt.Fprintln(streams.ErrOut, line)
+	}
+}
+
+// checkDockerDaemon verifies the Docker daemon is accessible
+func checkDockerDaemon(ctx context.Context, logger *log.Logger) error {
+	client := dockercli.New(logger)
+	_, err := client.ListContainers(ctx, []string{})
 	return err
 }
 
 // displayConnectionInfo shows the user how to connect to the cluster services
 func displayConnectionInfo(streams cmd.IOStreams, clusterName string) {
 	fmt.Fprintln(streams.ErrOut, "Connection information:")
-	fmt.Fprintln(streams.ErrOut, "  Nomad:  http://localhost:4646")
-	fmt.Fprintln(streams.ErrOut, "  Consul: http://localhost:8500")
-	fmt.Fprintln(streams.ErrOut, "  Vault:  http://localhost:8200")
+	fmt.Fprintf(streams.ErrOut, "  Nomad:  http://localhost:%d\n", domain.DefaultNomadPort)
+	fmt.Fprintf(streams.ErrOut, "  Consul: http://localhost:%d\n", domain.DefaultConsulPort)
+	fmt.Fprintf(streams.ErrOut, "  Vault:  http://localhost:%d\n", domain.DefaultVaultPort)
 }

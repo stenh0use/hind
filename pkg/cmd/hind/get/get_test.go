@@ -3,17 +3,19 @@ package get
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/apex/log"
 	"github.com/apex/log/handlers/discard"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
-	"github.com/stenh0use/hind/pkg/cluster"
+	"github.com/stenh0use/hind/pkg/cluster/domain"
+	"github.com/stenh0use/hind/pkg/cluster/orchestration"
 	"github.com/stenh0use/hind/pkg/cmd"
-	"github.com/stenh0use/hind/pkg/provider"
 )
 
 func TestNewCommand(t *testing.T) {
@@ -28,24 +30,15 @@ func TestNewCommand(t *testing.T) {
 
 	command := NewCommand(logger, streams)
 
-	if command == nil {
-		t.Fatal("NewCommand() returned nil")
-	}
+	require.NotNil(t, command, "NewCommand() returned nil")
 
-	if command.Use != "get [cluster-name]" {
-		t.Errorf("Expected Use to be 'get [cluster-name]', got '%s'", command.Use)
-	}
-
-	if command.Short != "Get a hind cluster details" {
-		t.Errorf("Expected Short to be 'Get a hind cluster details', got '%s'", command.Short)
-	}
+	assert.Equal(t, "get [cluster-name]", command.Use)
+	assert.Equal(t, "Get a hind cluster details", command.Short)
 }
 
 func TestDefaultTimeout(t *testing.T) {
 	expected := 2 * time.Minute
-	if DefaultGetTimeout != expected {
-		t.Errorf("Expected DefaultGetTimeout to be %v, got %v", expected, DefaultGetTimeout)
-	}
+	assert.Equal(t, expected, DefaultGetTimeout)
 }
 
 func TestCommandFlags(t *testing.T) {
@@ -62,13 +55,9 @@ func TestCommandFlags(t *testing.T) {
 
 	// Check if timeout flag exists
 	timeoutFlag := command.Flags().Lookup("timeout")
-	if timeoutFlag == nil {
-		t.Fatal("Expected 'timeout' flag to exist")
-	}
+	require.NotNil(t, timeoutFlag, "Expected 'timeout' flag to exist")
 
-	if timeoutFlag.DefValue != "2m0s" {
-		t.Errorf("Expected timeout default value to be '2m0s', got '%s'", timeoutFlag.DefValue)
-	}
+	assert.Equal(t, "2m0s", timeoutFlag.DefValue)
 }
 
 func TestCommandArgs(t *testing.T) {
@@ -117,18 +106,18 @@ func TestCommandArgs(t *testing.T) {
 }
 
 type stubClusterManager struct {
-	state *cluster.ClusterInfo
+	state orchestration.InspectResult
 	err   error
 }
 
-func (s *stubClusterManager) Get(ctx context.Context) (*cluster.ClusterInfo, error) {
+func (s *stubClusterManager) Inspect(ctx context.Context) (orchestration.InspectResult, error) {
 	if s.err != nil {
-		return nil, s.err
+		return orchestration.InspectResult{}, s.err
 	}
 	return s.state, nil
 }
 
-func TestRunE_FormatsStatusAndPortsFromRuntimeState(t *testing.T) {
+func TestRunE_FormatsStatusFromRuntimeState(t *testing.T) {
 	logger := &log.Logger{Handler: discard.New(), Level: log.ErrorLevel}
 
 	var out bytes.Buffer
@@ -136,14 +125,13 @@ func TestRunE_FormatsStatusAndPortsFromRuntimeState(t *testing.T) {
 
 	originalFactory := newClusterManager
 	newClusterManager = func(logger *log.Logger, name string) (clusterManager, error) {
-		return &stubClusterManager{state: &cluster.ClusterInfo{
-			Network: provider.NetworkInfo{Name: "hind.test"},
-			Containers: []provider.ContainerInfo{
+		return &stubClusterManager{state: orchestration.InspectResult{
+			NetworkName: "hind.test",
+			Containers: []orchestration.ContainerSummary{
 				{
 					HostName: "hind.demo.server.01",
 					Image:    "nomad:latest",
-					Status:   "running",
-					Ports:    []string{"127.0.0.1:4646->4646/tcp", "127.0.0.1:4647->4647/tcp"},
+					Status:   domain.ContainerStatusRunning,
 				},
 			},
 		}}, nil
@@ -151,86 +139,96 @@ func TestRunE_FormatsStatusAndPortsFromRuntimeState(t *testing.T) {
 	defer func() { newClusterManager = originalFactory }()
 
 	err := runE(context.Background(), logger, streams, time.Second, []string{"demo"})
-	if err != nil {
-		t.Fatalf("runE returned error: %v", err)
-	}
+	require.NoError(t, err)
 
 	output := out.String()
-	if !strings.Contains(output, "Status: running") {
-		t.Fatalf("expected running status in output, got: %s", output)
-	}
-	if strings.Contains(output, "%!s(") {
-		t.Fatalf("expected no fmt artifact in output, got: %s", output)
-	}
-	if !strings.Contains(output, "127.0.0.1:4646->4646/tcp, 127.0.0.1:4647->4647/tcp") {
-		t.Fatalf("expected joined ports in output, got: %s", output)
-	}
+	assert.Contains(t, output, "Status: running")
+	assert.NotContains(t, output, "%!s(")
 }
 
-func TestAggregateStatus(t *testing.T) {
+func TestRunE_NotFoundMapping(t *testing.T) {
+	logger := &log.Logger{Handler: discard.New(), Level: log.ErrorLevel}
+	streams := cmd.IOStreams{Out: io.Discard, ErrOut: io.Discard}
+
 	tests := []struct {
-		name       string
-		containers []provider.ContainerInfo
-		expected   string
+		name      string
+		err       error
+		wantToken string
 	}{
-		{
-			name:     "no containers",
-			expected: provider.NA.String(),
-		},
-		{
-			name:       "all running",
-			containers: []provider.ContainerInfo{{Status: "running"}, {Status: "running"}},
-			expected:   provider.Running.String(),
-		},
-		{
-			name:       "all stopped",
-			containers: []provider.ContainerInfo{{Status: provider.Stopped.String()}, {Status: provider.Stopped.String()}},
-			expected:   provider.Stopped.String(),
-		},
-		{
-			name:       "exited is unknown without provider normalization",
-			containers: []provider.ContainerInfo{{Status: "exited"}},
-			expected:   provider.Error.String(),
-		},
-		{
-			name:       "mixed running and stopped reports error",
-			containers: []provider.ContainerInfo{{Status: "running"}, {Status: "stopped"}},
-			expected:   provider.Error.String(),
-		},
-		{
-			name:       "unknown state reports error",
-			containers: []provider.ContainerInfo{{Status: "restarting"}},
-			expected:   provider.Error.String(),
-		},
+		{name: "typed not found", err: &orchestration.NotFoundError{Operation: "inspect", Cluster: "demo"}, wantToken: "cluster 'demo' not found"},
+		{name: "generic wrapped error", err: errors.New("boom"), wantToken: "failed to get cluster"},
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			status := aggregateStatus(&cluster.ClusterInfo{Containers: tt.containers})
-			if status != tt.expected {
-				t.Fatalf("expected status %q, got %q", tt.expected, status)
+			originalFactory := newClusterManager
+			newClusterManager = func(logger *log.Logger, name string) (clusterManager, error) {
+				return &stubClusterManager{err: tt.err}, nil
 			}
+			defer func() { newClusterManager = originalFactory }()
+
+			err := runE(context.Background(), logger, streams, time.Second, []string{"demo"})
+			require.Error(t, err, "runE expected error")
+			assert.Contains(t, err.Error(), tt.wantToken)
 		})
 	}
 }
 
-func TestFormatPorts(t *testing.T) {
+func TestAggregateContainerStatus(t *testing.T) {
 	tests := []struct {
-		name     string
-		ports    []string
-		expected string
+		name       string
+		containers []orchestration.ContainerSummary
+		expected   string
 	}{
-		{name: "empty ports", ports: nil, expected: "-"},
-		{name: "single port", ports: []string{"127.0.0.1:4646->4646/tcp"}, expected: "127.0.0.1:4646->4646/tcp"},
-		{name: "multiple ports", ports: []string{"4646/tcp", "4647/tcp"}, expected: "4646/tcp, 4647/tcp"},
+		{
+			name:     "no containers",
+			expected: string(domain.ClusterStatusNotFound),
+		},
+		{
+			name: "all running",
+			containers: []orchestration.ContainerSummary{
+				{Status: domain.ContainerStatusRunning},
+				{Status: domain.ContainerStatusRunning},
+			},
+			expected: string(domain.ClusterStatusRunning),
+		},
+		{
+			name: "all stopped",
+			containers: []orchestration.ContainerSummary{
+				{Status: domain.ContainerStatusStopped},
+				{Status: domain.ContainerStatusStopped},
+			},
+			expected: string(domain.ClusterStatusStopped),
+		},
+		{
+			name: "mixed running and stopped returns partial",
+			containers: []orchestration.ContainerSummary{
+				{Status: domain.ContainerStatusRunning},
+				{Status: domain.ContainerStatusStopped},
+			},
+			expected: string(domain.ClusterStatusPartial),
+		},
+		{
+			name: "unknown state returns degraded",
+			containers: []orchestration.ContainerSummary{
+				{Status: domain.ContainerStatusUnknown},
+			},
+			expected: string(domain.ClusterStatusDegraded),
+		},
+		{
+			name: "unhealthy returns degraded",
+			containers: []orchestration.ContainerSummary{
+				{Status: domain.ContainerStatusUnhealthy},
+			},
+			expected: string(domain.ClusterStatusDegraded),
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual := formatPorts(tt.ports)
-			if actual != tt.expected {
-				t.Fatalf("expected ports %q, got %q", tt.expected, actual)
-			}
+			status := domain.AggregateContainerStatus(tt.containers)
+			assert.Equal(t, tt.expected, string(status))
 		})
 	}
 }

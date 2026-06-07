@@ -3,242 +3,198 @@ package list
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/apex/log"
 	"github.com/apex/log/handlers/discard"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
-	"github.com/stenh0use/hind/pkg/cluster"
+	"github.com/stenh0use/hind/pkg/cluster/orchestration"
+	"github.com/stenh0use/hind/pkg/cluster/persistence"
 	"github.com/stenh0use/hind/pkg/cmd"
-	"github.com/stenh0use/hind/pkg/config"
-	"github.com/stenh0use/hind/pkg/provider"
+	"github.com/stenh0use/hind/pkg/file"
 )
 
-func TestRunE_NoClustersOnFirstRunWhenConfigDirMissing(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+// fakeActive is a minimal in-memory ActiveRepository for tests.
+type fakeActive struct {
+	stored    string
+	activeErr error
+}
 
+func (f *fakeActive) GetActive(_ context.Context) (string, error) { return f.stored, f.activeErr }
+func (f *fakeActive) SetActive(_ context.Context, n string) error {
+	f.stored = n
+	return nil
+}
+func (f *fakeActive) ClearActive(_ context.Context) error {
+	f.stored = ""
+	return nil
+}
+
+var _ persistence.ActiveRepository = (*fakeActive)(nil)
+
+type stubOrchListService struct {
+	result orchestration.ListResult
+	err    error
+}
+
+func (s *stubOrchListService) List(_ context.Context) (orchestration.ListResult, error) {
+	if s.err != nil {
+		return orchestration.ListResult{}, s.err
+	}
+	return s.result, nil
+}
+
+func withRunEStubs(t *testing.T, orchSvc clusterListService, activeCluster string, activeErr error, statuses map[string]*clusterStatus, statusErrs map[string]error) {
+	t.Helper()
+	oldListSvc := newClusterListServices
+	oldStatusFn := getClusterStatusFn
+
+	newClusterListServices = func(_ *log.Logger) (listServices, error) {
+		return listServices{
+			Orchestration: orchSvc,
+			Active:        &fakeActive{stored: activeCluster, activeErr: activeErr},
+		}, nil
+	}
+	getClusterStatusFn = func(_ context.Context, _ *log.Logger, clusterName string, _ time.Duration) (*clusterStatus, error) {
+		if statusErrs != nil {
+			if err, ok := statusErrs[clusterName]; ok {
+				return nil, err
+			}
+		}
+		if statuses != nil {
+			if status, ok := statuses[clusterName]; ok {
+				return status, nil
+			}
+		}
+		return nil, fmt.Errorf("missing status for %s", clusterName)
+	}
+
+	t.Cleanup(func() {
+		newClusterListServices = oldListSvc
+		getClusterStatusFn = oldStatusFn
+	})
+}
+
+func TestRunE_NoClustersOnFirstRunWhenConfigDirMissing(t *testing.T) {
 	logger := &log.Logger{Handler: discard.New(), Level: log.ErrorLevel}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	streams := cmd.IOStreams{In: strings.NewReader(""), Out: &stdout, ErrOut: &stderr}
 
-	err := runE(context.Background(), logger, streams, DefaultListTimeout)
-	if err != nil {
-		t.Fatalf("runE() returned error on first-run missing config dir: %v", err)
-	}
+	withRunEStubs(t, &stubOrchListService{result: orchestration.ListResult{Names: nil}}, "", nil, nil, nil)
 
-	if got := stderr.String(); !strings.Contains(got, "No clusters found") {
-		t.Fatalf("expected empty-state output in stderr, got %q", got)
-	}
+	err := runE(
+		context.Background(),
+		logger,
+		streams,
+		DefaultListTimeout,
+	)
+	require.NoError(t, err, "runE() returned error on first-run missing config dir")
 
-	if got := stdout.String(); got != "" {
-		t.Fatalf("expected no stdout table output, got %q", got)
-	}
+	assert.Contains(t, stderr.String(), "No clusters found")
+	assert.Empty(t, stdout.String(), "expected no stdout table output")
 }
 
-func TestAggregateClusterStatus_AllRunning(t *testing.T) {
-	info := &cluster.ClusterInfo{
-		Containers: []provider.ContainerInfo{
-			{Name: "node1", Status: provider.Running.String(), Created: time.Now().Format(time.RFC3339)},
-			{Name: "node2", Status: provider.Running.String(), Created: time.Now().Format(time.RFC3339)},
-			{Name: "node3", Status: provider.Running.String(), Created: time.Now().Format(time.RFC3339)},
+func TestRunE_TableFormattingAndActiveMarkerCompatibility(t *testing.T) {
+	logger := &log.Logger{Handler: discard.New(), Level: log.ErrorLevel}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	streams := cmd.IOStreams{In: strings.NewReader(""), Out: &stdout, ErrOut: &stderr}
+
+	withRunEStubs(t,
+		&stubOrchListService{result: orchestration.ListResult{Names: []string{"alpha", "beta"}}},
+		"beta",
+		nil,
+		map[string]*clusterStatus{
+			"alpha": {Status: "running", RunningNodes: 2, TotalNodes: 2},
+			"beta":  {Status: "not-found"},
 		},
-	}
+		nil,
+	)
 
-	cfg := &config.Cluster{
-		Nodes: []config.Node{{}, {}, {}},
-	}
+	err := runE(
+		context.Background(),
+		logger,
+		streams,
+		DefaultListTimeout,
+	)
+	require.NoError(t, err)
 
-	result := aggregateClusterStatus(info, cfg)
-
-	if result.Status != "running" {
-		t.Errorf("Expected status 'running', got '%s'", result.Status)
-	}
-	if result.RunningNodes != 3 {
-		t.Errorf("Expected 3 running nodes, got %d", result.RunningNodes)
-	}
-	if result.TotalNodes != 3 {
-		t.Errorf("Expected 3 total nodes, got %d", result.TotalNodes)
-	}
+	output := stdout.String()
+	assert.Contains(t, output, "NAME")
+	assert.Contains(t, output, "ACTIVE")
+	assert.Contains(t, output, "NODES")
+	assert.Contains(t, output, "alpha")
+	assert.Contains(t, output, "running")
+	assert.Contains(t, output, "2/2")
+	assert.Contains(t, output, "beta")
+	assert.Contains(t, output, "*")
+	assert.Contains(t, output, "not-found")
+	assert.Contains(t, output, "-")
+	assert.Empty(t, stderr.String(), "expected empty stderr on successful table output")
 }
 
-func TestAggregateClusterStatus_AllStopped(t *testing.T) {
-	info := &cluster.ClusterInfo{
-		Containers: []provider.ContainerInfo{
-			{Name: "node1", Status: provider.Stopped.String(), Created: time.Now().Format(time.RFC3339)},
-			{Name: "node2", Status: provider.Stopped.String(), Created: time.Now().Format(time.RFC3339)},
-		},
-	}
+func TestRunE_StatusErrorFallsBackToErrorRowCompatibility(t *testing.T) {
+	logger := &log.Logger{Handler: discard.New(), Level: log.ErrorLevel}
+	var stdout bytes.Buffer
+	streams := cmd.IOStreams{In: strings.NewReader(""), Out: &stdout, ErrOut: &bytes.Buffer{}}
 
-	cfg := &config.Cluster{
-		Nodes: []config.Node{{}, {}},
-	}
+	withRunEStubs(t,
+		&stubOrchListService{result: orchestration.ListResult{Names: []string{"alpha"}}},
+		"",
+		nil,
+		nil,
+		map[string]error{"alpha": errors.New("boom")},
+	)
 
-	result := aggregateClusterStatus(info, cfg)
+	err := runE(
+		context.Background(),
+		logger,
+		streams,
+		DefaultListTimeout,
+	)
+	require.NoError(t, err)
 
-	if result.Status != "stopped" {
-		t.Errorf("Expected status 'stopped', got '%s'", result.Status)
-	}
-	if result.RunningNodes != 0 {
-		t.Errorf("Expected 0 running nodes, got %d", result.RunningNodes)
-	}
-}
-
-func TestAggregateClusterStatus_Mixed(t *testing.T) {
-	info := &cluster.ClusterInfo{
-		Containers: []provider.ContainerInfo{
-			{Name: "node1", Status: provider.Running.String(), Created: time.Now().Format(time.RFC3339)},
-			{Name: "node2", Status: provider.Stopped.String(), Created: time.Now().Format(time.RFC3339)},
-			{Name: "node3", Status: provider.Running.String(), Created: time.Now().Format(time.RFC3339)},
-		},
-	}
-
-	cfg := &config.Cluster{
-		Nodes: []config.Node{{}, {}, {}},
-	}
-
-	result := aggregateClusterStatus(info, cfg)
-
-	if result.Status != "partial" {
-		t.Errorf("Expected status 'partial', got '%s'", result.Status)
-	}
-	if result.RunningNodes != 2 {
-		t.Errorf("Expected 2 running nodes, got %d", result.RunningNodes)
-	}
-}
-
-func TestAggregateClusterStatus_WithErrors(t *testing.T) {
-	info := &cluster.ClusterInfo{
-		Containers: []provider.ContainerInfo{
-			{Name: "node1", Status: provider.Running.String(), Created: time.Now().Format(time.RFC3339)},
-			{Name: "node2", Status: provider.Error.String(), Created: time.Now().Format(time.RFC3339)},
-		},
-	}
-
-	cfg := &config.Cluster{
-		Nodes: []config.Node{{}, {}},
-	}
-
-	result := aggregateClusterStatus(info, cfg)
-
-	if result.Status != "degraded" {
-		t.Errorf("Expected status 'degraded', got '%s'", result.Status)
-	}
-}
-
-func TestAggregateClusterStatus_NoContainers(t *testing.T) {
-	info := &cluster.ClusterInfo{
-		Containers: []provider.ContainerInfo{},
-	}
-
-	cfg := &config.Cluster{
-		Nodes: []config.Node{{}, {}},
-	}
-
-	result := aggregateClusterStatus(info, cfg)
-
-	if result.Status != "not-found" {
-		t.Errorf("Expected status 'not-found', got '%s'", result.Status)
-	}
-}
-
-func TestAggregateClusterStatus_PartialRunning(t *testing.T) {
-	info := &cluster.ClusterInfo{
-		Containers: []provider.ContainerInfo{
-			{Name: "node1", Status: provider.Running.String(), Created: time.Now().Format(time.RFC3339)},
-			{Name: "node2", Status: provider.Running.String(), Created: time.Now().Format(time.RFC3339)},
-		},
-	}
-
-	cfg := &config.Cluster{
-		Nodes: []config.Node{{}, {}, {}}, // 3 expected but only 2 containers
-	}
-
-	result := aggregateClusterStatus(info, cfg)
-
-	if result.Status != "partial" {
-		t.Errorf("Expected status 'partial', got '%s'", result.Status)
-	}
-	if result.RunningNodes != 2 {
-		t.Errorf("Expected 2 running nodes, got %d", result.RunningNodes)
-	}
-	if result.TotalNodes != 3 {
-		t.Errorf("Expected 3 total nodes, got %d", result.TotalNodes)
-	}
-}
-
-func TestParseCreatedTime_RFC3339(t *testing.T) {
-	now := time.Now()
-	timeStr := now.Format(time.RFC3339)
-
-	parsed, err := parseCreatedTime(timeStr)
-	if err != nil {
-		t.Errorf("Failed to parse RFC3339 time: %v", err)
-	}
-
-	// Allow for small differences due to formatting precision
-	if parsed.Unix() != now.Unix() {
-		t.Errorf("Parsed time doesn't match. Expected %v, got %v", now.Unix(), parsed.Unix())
-	}
-}
-
-func TestParseCreatedTime_RFC3339Nano(t *testing.T) {
-	now := time.Now()
-	timeStr := now.Format(time.RFC3339Nano)
-
-	parsed, err := parseCreatedTime(timeStr)
-	if err != nil {
-		t.Errorf("Failed to parse RFC3339Nano time: %v", err)
-	}
-
-	if parsed.Unix() != now.Unix() {
-		t.Errorf("Parsed time doesn't match. Expected %v, got %v", now.Unix(), parsed.Unix())
-	}
-}
-
-func TestParseCreatedTime_InvalidFormat(t *testing.T) {
-	_, err := parseCreatedTime("invalid-time-string")
-	if err == nil {
-		t.Error("Expected error for invalid time format, got nil")
-	}
+	output := stdout.String()
+	assert.Contains(t, output, "alpha")
+	assert.Contains(t, output, "error")
+	assert.Contains(t, output, "-")
 }
 
 func TestFormatCreatedTime_JustNow(t *testing.T) {
 	now := time.Now().Add(-30 * time.Second)
 	result := formatCreatedTime(now)
 
-	if result != "just now" {
-		t.Errorf("Expected 'just now', got '%s'", result)
-	}
+	assert.Equal(t, "just now", result)
 }
 
 func TestFormatCreatedTime_Minutes(t *testing.T) {
 	past := time.Now().Add(-5 * time.Minute)
 	result := formatCreatedTime(past)
 
-	if result != "5m ago" {
-		t.Errorf("Expected '5m ago', got '%s'", result)
-	}
+	assert.Equal(t, "5m ago", result)
 }
 
 func TestFormatCreatedTime_Hours(t *testing.T) {
 	past := time.Now().Add(-3 * time.Hour)
 	result := formatCreatedTime(past)
 
-	if result != "3h ago" {
-		t.Errorf("Expected '3h ago', got '%s'", result)
-	}
+	assert.Equal(t, "3h ago", result)
 }
 
 func TestFormatCreatedTime_Days(t *testing.T) {
 	past := time.Now().Add(-2 * 24 * time.Hour)
 	result := formatCreatedTime(past)
 
-	if result != "2d ago" {
-		t.Errorf("Expected '2d ago', got '%s'", result)
-	}
+	assert.Equal(t, "2d ago", result)
 }
 
 func TestFormatCreatedTime_AbsoluteDate(t *testing.T) {
@@ -246,98 +202,45 @@ func TestFormatCreatedTime_AbsoluteDate(t *testing.T) {
 	result := formatCreatedTime(past)
 
 	expected := past.Format("2006-01-02")
-	if result != expected {
-		t.Errorf("Expected '%s', got '%s'", expected, result)
-	}
+	assert.Equal(t, expected, result)
 }
 
 func TestFormatCreatedTime_ZeroTime(t *testing.T) {
 	zeroTime := time.Time{}
 	result := formatCreatedTime(zeroTime)
 
-	if result != "unknown" {
-		t.Errorf("Expected 'unknown', got '%s'", result)
-	}
+	assert.Equal(t, "unknown", result)
 }
 
-func TestAggregateClusterStatus_OldestCreationTime(t *testing.T) {
-	oldest := time.Now().Add(-48 * time.Hour)
-	middle := time.Now().Add(-24 * time.Hour)
-	newest := time.Now().Add(-1 * time.Hour)
-
-	info := &cluster.ClusterInfo{
-		Containers: []provider.ContainerInfo{
-			{Name: "node1", Status: provider.Running.String(), Created: newest.Format(time.RFC3339)},
-			{Name: "node2", Status: provider.Running.String(), Created: oldest.Format(time.RFC3339)},
-			{Name: "node3", Status: provider.Running.String(), Created: middle.Format(time.RFC3339)},
-		},
-	}
-
-	cfg := &config.Cluster{
-		Nodes: []config.Node{{}, {}, {}},
-	}
-
-	result := aggregateClusterStatus(info, cfg)
-
-	// Should use the oldest time
-	if result.Created.Unix() != oldest.Unix() {
-		t.Errorf("Expected oldest creation time %v, got %v", oldest, result.Created)
-	}
+type failAfterWriter struct {
+	writesLeft int
 }
 
-func TestAggregateClusterStatus_StoppedStatusComesFromProvider(t *testing.T) {
-	info := &cluster.ClusterInfo{
-		Containers: []provider.ContainerInfo{
-			{Name: "node1", Status: provider.Stopped.String(), Created: time.Now().Format(time.RFC3339)},
-			{Name: "node2", Status: provider.Stopped.String(), Created: time.Now().Format(time.RFC3339)},
-		},
+func (w *failAfterWriter) Write(p []byte) (int, error) {
+	if w.writesLeft <= 0 {
+		return 0, errors.New("write failed")
 	}
-
-	cfg := &config.Cluster{
-		Nodes: []config.Node{{}, {}},
-	}
-
-	result := aggregateClusterStatus(info, cfg)
-
-	if result.Status != "stopped" {
-		t.Errorf("Expected status 'stopped' for stopped containers, got '%s'", result.Status)
-	}
+	w.writesLeft--
+	return len(p), nil
 }
 
-func TestAggregateClusterStatus_ExitedStatusWithoutNormalizationIsPartial(t *testing.T) {
-	info := &cluster.ClusterInfo{
-		Containers: []provider.ContainerInfo{
-			{Name: "node1", Status: "exited", Created: time.Now().Format(time.RFC3339)},
-			{Name: "node2", Status: "exited", Created: time.Now().Format(time.RFC3339)},
-		},
-	}
+func TestRunE_ReturnsErrorWhenTableFlushFails(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 
-	cfg := &config.Cluster{
-		Nodes: []config.Node{{}, {}},
-	}
+	// Use the same path layout as persistence/fs: $HOME/.config/hind/cluster/<name>
+	homeDir, err := os.UserHomeDir()
+	require.NoError(t, err, "failed to get user home dir")
 
-	result := aggregateClusterStatus(info, cfg)
+	rootDir := filepath.Clean(filepath.Join(homeDir, ".config", "hind"))
+	fm, err := file.New(rootDir)
+	require.NoError(t, err, "failed to create file manager")
 
-	if result.Status != "partial" {
-		t.Errorf("Expected status 'partial' without provider normalization, got '%s'", result.Status)
-	}
-}
+	err = fm.EnsureDir(filepath.Join("cluster", "flush-cluster"))
+	require.NoError(t, err, "failed to create test cluster dir")
 
-func TestAggregateClusterStatus_InvalidCreationTime(t *testing.T) {
-	info := &cluster.ClusterInfo{
-		Containers: []provider.ContainerInfo{
-			{Name: "node1", Status: provider.Running.String(), Created: "invalid-time"},
-		},
-	}
+	logger := &log.Logger{Handler: discard.New(), Level: log.ErrorLevel}
+	streams := cmd.IOStreams{In: strings.NewReader(""), Out: &failAfterWriter{writesLeft: 1}, ErrOut: &bytes.Buffer{}}
 
-	cfg := &config.Cluster{
-		Nodes: []config.Node{{}},
-	}
-
-	result := aggregateClusterStatus(info, cfg)
-
-	// Should still return valid status even with invalid time
-	if result.Status != "running" {
-		t.Errorf("Expected status 'running', got '%s'", result.Status)
-	}
+	err = runE(context.Background(), logger, streams, DefaultListTimeout)
+	require.Error(t, err, "expected flush/write error, got nil")
 }

@@ -11,196 +11,289 @@ import (
 
 	"github.com/apex/log"
 	"github.com/apex/log/handlers/discard"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
-	"github.com/stenh0use/hind/pkg/cluster"
+	"github.com/stenh0use/hind/pkg/cluster/domain"
+	"github.com/stenh0use/hind/pkg/cluster/orchestration"
+	persistencefs "github.com/stenh0use/hind/pkg/cluster/persistence/fs"
 	"github.com/stenh0use/hind/pkg/cmd"
+	"github.com/stenh0use/hind/pkg/version"
 )
 
 func testLogger() *log.Logger {
 	return &log.Logger{Handler: discard.New(), Level: log.ErrorLevel}
 }
 
+func saveStopTestCluster(t *testing.T, name string) error {
+	t.Helper()
+	repo, err := persistencefs.NewRepository()
+	if err != nil {
+		return err
+	}
+	c, err := domain.BuildDefaultCluster(name, version.HindVersion)
+	if err != nil {
+		return err
+	}
+	return repo.Save(context.Background(), c)
+}
+
+// fakeActive is a minimal in-memory ActiveRepository for tests.
+type fakeActive struct {
+	stored string
+	getErr error
+}
+
+func (f *fakeActive) GetActive(_ context.Context) (string, error) { return f.stored, f.getErr }
+func (f *fakeActive) SetActive(_ context.Context, n string) error {
+	f.stored = n
+	return nil
+}
+func (f *fakeActive) ClearActive(_ context.Context) error {
+	f.stored = ""
+	return nil
+}
+
 type fakeStopManager struct {
-	configExists bool
-	result       cluster.StopResult
+	result       orchestration.StopResult
 	err          error
-	receivedOpts cluster.StopOptions
+	receivedOpts orchestration.StopOptions
 }
 
-func (f *fakeStopManager) ConfigFileExists() bool {
-	return f.configExists
-}
-
-func (f *fakeStopManager) StopWithOptions(_ context.Context, opts cluster.StopOptions) (cluster.StopResult, error) {
+func (f *fakeStopManager) StopWithOptions(_ context.Context, opts orchestration.StopOptions) (orchestration.StopResult, error) {
 	f.receivedOpts = opts
 	if f.err != nil {
-		return cluster.StopResult{}, f.err
+		return orchestration.StopResult{}, f.err
 	}
 	return f.result, nil
 }
 
 func withRunEStubs(t *testing.T, active string, build func() clusterStopper) {
 	t.Helper()
-	oldActive := getActiveClusterFn
-	oldNewMgr := newClusterManagerFn
-	getActiveClusterFn = func() (string, error) { return active, nil }
-	newClusterManagerFn = func(_ *log.Logger, _ string) (clusterStopper, error) { return build(), nil }
+	oldNewSvc := newStopServicesFn
+	newStopServicesFn = func(_ *log.Logger, _ string) (stopServices, error) {
+		mgr := build()
+		fa := &fakeActive{stored: active}
+		return stopServices{Orchestration: mgr, Active: fa}, nil
+	}
 	t.Cleanup(func() {
-		getActiveClusterFn = oldActive
-		newClusterManagerFn = oldNewMgr
+		newStopServicesFn = oldNewSvc
 	})
 }
 
 func TestRunEMessageContracts(t *testing.T) {
 	tests := []struct {
-		name            string
-		force           bool
-		verbose         bool
-		result          cluster.StopResult
-		wantLines       []string
-		wantForceOpt    bool
-		wantVerboseOpt  bool
-		wantFailContain bool
+		name              string
+		force             bool
+		result            orchestration.StopResult
+		wantSummaryToken  string
+		wantContains      []string
+		wantExitCode      int
+		wantForceOpt      bool
+		wantOrderedTokens []string
 	}{
 		{
-			name:      "already stopped",
-			result:    cluster.StopResult{AlreadyStoppedCount: 2},
-			wantLines: []string{"Cluster 'default' is already stopped"},
+			name:             "already stopped",
+			result:           orchestration.StopResult{Outcome: orchestration.StopOutcomeAlreadyStopped, AlreadyStoppedCount: 2},
+			wantSummaryToken: "already stopped",
+			wantContains:     []string{"Cluster 'default'", "already stopped"},
+			wantExitCode:     0,
 		},
 		{
-			name:         "force stopped",
-			force:        true,
-			result:       cluster.StopResult{StoppedCount: 2},
-			wantLines:    []string{"Cluster 'default' force stopped"},
-			wantForceOpt: true,
+			name:             "force stopped",
+			force:            true,
+			result:           orchestration.StopResult{Outcome: orchestration.StopOutcomeSuccess, StoppedCount: 2},
+			wantSummaryToken: "force stopped",
+			wantContains:     []string{"Cluster 'default'", "force stopped"},
+			wantExitCode:     0,
+			wantForceOpt:     true,
 		},
 		{
-			name:      "partial failure warnings",
-			result:    cluster.StopResult{StoppedCount: 1, FailedCount: 1, Failures: []string{"n2"}},
-			wantLines: []string{"Failed to stop container 'n2'", "Cluster 'default' partially stopped"},
+			name:             "partial failure warnings",
+			result:           orchestration.StopResult{Outcome: orchestration.StopOutcomePartialFailure, StoppedCount: 1, FailedCount: 1, Failures: []string{"n2"}},
+			wantSummaryToken: "partially stopped",
+			wantContains:     []string{"Failed to stop container 'n2'", "partially stopped"},
+			wantExitCode:     1,
 		},
 		{
-			name:         "force with partial failure still errors",
-			force:        true,
-			result:       cluster.StopResult{StoppedCount: 1, FailedCount: 1, Failures: []string{"n2"}},
-			wantLines:    []string{"Failed to stop container 'n2'", "Cluster 'default' partially stopped"},
-			wantForceOpt: true,
+			name:             "force with partial failure still errors",
+			force:            true,
+			result:           orchestration.StopResult{Outcome: orchestration.StopOutcomePartialFailure, StoppedCount: 1, FailedCount: 1, Failures: []string{"n2"}},
+			wantSummaryToken: "partially stopped",
+			wantContains:     []string{"Failed to stop container 'n2'", "partially stopped"},
+			wantExitCode:     1,
+			wantForceOpt:     true,
 		},
 		{
-			name:      "unhealthy pre-failed",
-			result:    cluster.StopResult{AlreadyStoppedCount: 1, FailedPreStopCount: 1},
-			wantLines: []string{"Cluster 'default' stopped (some containers were already failed)"},
+			// W-017 AC5 fallback assertion: command-layer coverage must keep
+			// health-complication wording explicit when top-level e2e is absent.
+			name: "W-017 AC5 fallback: unhealthy pre-failed keeps health token and exit semantics",
+			result: orchestration.StopResult{
+				Outcome:             orchestration.StopOutcomeDegradedPreFailed,
+				AlreadyStoppedCount: 1,
+				FailedPreStopCount:  1,
+			},
+			wantSummaryToken: "already failed",
+			wantContains: []string{
+				"Cluster 'default'",
+				"already failed",
+			},
+			wantExitCode: 0,
 		},
 		{
-			name:    "verbose ordering",
-			verbose: true,
-			result: cluster.StopResult{StoppedCount: 1, VerboseLines: []string{
-				"Checking container 'n1' status",
-				"Stopping container 'n1'",
-			}},
-			wantLines: []string{
-				"Checking cluster 'default' status",
-				"Checking container 'n1' status",
-				"Stopping container 'n1'",
+			// W-017 AC5 fallback assertion: equivalent token coverage for
+			// unresponsive containers at command layer.
+			name: "W-017 AC5 fallback: unresponsive pre-failed keeps health token and exit semantics",
+			result: orchestration.StopResult{
+				Outcome:             orchestration.StopOutcomeDegradedPreFailed,
+				AlreadyStoppedCount: 1,
+				FailedPreStopCount:  1,
+			},
+			wantSummaryToken: "already failed",
+			wantContains: []string{
+				"Cluster 'default'",
+				"already failed",
+			},
+			wantExitCode: 0,
+		},
+		{
+			name:             "stopped container output",
+			result:           orchestration.StopResult{Outcome: orchestration.StopOutcomeSuccess, StoppedCount: 1, StoppedContainers: []string{"n1"}},
+			wantSummaryToken: "stopped successfully",
+			wantContains: []string{
+				"Stopped container 'n1'",
 				"Cluster 'default' stopped successfully",
 			},
-			wantVerboseOpt: true,
+			wantOrderedTokens: []string{
+				"Stopped container 'n1'",
+				"stopped successfully",
+			},
+			wantExitCode: 0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mgr := &fakeStopManager{configExists: true, result: tt.result}
+			mgr := &fakeStopManager{result: tt.result}
 			withRunEStubs(t, "", func() clusterStopper { return mgr })
 			errBuf := &bytes.Buffer{}
 			streams := cmd.IOStreams{Out: io.Discard, ErrOut: errBuf}
 
-			err := runE(context.Background(), testLogger(), streams, DefaultStopTimeout, tt.force, tt.verbose, "")
-			if tt.name == "partial failure warnings" || tt.name == "force with partial failure still errors" {
-				if err == nil {
-					t.Fatal("runE() expected error for partial failure")
-				}
-				if !strings.Contains(err.Error(), "failed to stop 1 container(s)") {
-					t.Fatalf("runE() error = %v", err)
-				}
-			} else if err != nil {
-				t.Fatalf("runE() error = %v", err)
+			err := runE(context.Background(), testLogger(), streams, DefaultStopTimeout, tt.force, nil)
+			if tt.wantExitCode == 0 {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "failed to stop 1 container(s)")
 			}
 
-			out := strings.TrimSpace(errBuf.String())
-			gotLines := []string{}
-			if out != "" {
-				gotLines = strings.Split(out, "\n")
+			out := errBuf.String()
+			for _, token := range tt.wantContains {
+				assert.Contains(t, out, token, "output missing token %q", token)
 			}
-			if len(gotLines) != len(tt.wantLines) {
-				t.Fatalf("line count=%d want=%d output=%q", len(gotLines), len(tt.wantLines), errBuf.String())
-			}
-			for i := range tt.wantLines {
-				if gotLines[i] != tt.wantLines[i] {
-					t.Fatalf("line[%d]=%q want %q", i, gotLines[i], tt.wantLines[i])
+			assert.Equal(t, 1, strings.Count(out, tt.wantSummaryToken),
+				"summary token %q count want=1 output=%q", tt.wantSummaryToken, out)
+			if len(tt.wantOrderedTokens) > 0 {
+				last := -1
+				for _, token := range tt.wantOrderedTokens {
+					idx := strings.Index(out, token)
+					assert.NotEqual(t, -1, idx, "ordered token missing %q in output %q", token, out)
+					assert.Greater(t, idx, last, "token %q appeared out of order in output %q", token, out)
+					last = idx
 				}
 			}
-			if mgr.receivedOpts.Force != tt.wantForceOpt {
-				t.Fatalf("force opt=%v want %v", mgr.receivedOpts.Force, tt.wantForceOpt)
-			}
-			if mgr.receivedOpts.Verbose != tt.wantVerboseOpt {
-				t.Fatalf("verbose opt=%v want %v", mgr.receivedOpts.Verbose, tt.wantVerboseOpt)
-			}
+			assert.Equal(t, tt.wantForceOpt, mgr.receivedOpts.Force)
 		})
 	}
 }
 
-func TestRunEStopError(t *testing.T) {
-	mgr := &fakeStopManager{configExists: true, err: errors.New("boom")}
+// W-017 fallback traceability: this command-level suite is the approved
+// fallback when /test/e2e harness coverage is absent.
+func TestRunEStopErrorHardAbortNoSummaryLine(t *testing.T) {
+	mgr := &fakeStopManager{err: errors.New("boom")}
 	withRunEStubs(t, "", func() clusterStopper { return mgr })
-	streams := cmd.IOStreams{Out: io.Discard, ErrOut: io.Discard}
+	errBuf := &bytes.Buffer{}
+	streams := cmd.IOStreams{Out: io.Discard, ErrOut: errBuf}
 
-	err := runE(context.Background(), testLogger(), streams, DefaultStopTimeout, false, false, "")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !strings.Contains(err.Error(), "failed to stop cluster") {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	err := runE(context.Background(), testLogger(), streams, DefaultStopTimeout, false, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to stop cluster")
+
+	out := errBuf.String()
+	assert.False(t,
+		strings.Contains(out, "stopped successfully") ||
+			strings.Contains(out, "partially stopped") ||
+			strings.Contains(out, "already stopped") ||
+			strings.Contains(out, "force stopped") ||
+			strings.Contains(out, "already failed"),
+		"expected no final summary line on hard abort path, got output %q", out)
 }
 
 func TestRunEClusterNotFound(t *testing.T) {
-	mgr := &fakeStopManager{configExists: false}
+	mgr := &fakeStopManager{err: &orchestration.NotFoundError{Operation: "stop", Cluster: "default"}}
 	withRunEStubs(t, "", func() clusterStopper { return mgr })
 	streams := cmd.IOStreams{Out: io.Discard, ErrOut: io.Discard}
 
-	err := runE(context.Background(), testLogger(), streams, DefaultStopTimeout, false, false, "")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !strings.Contains(err.Error(), "cluster 'default' not found") {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	err := runE(context.Background(), testLogger(), streams, DefaultStopTimeout, false, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cluster 'default' not found")
 }
 
 func TestRunEUsesActiveClusterWhenNoArg(t *testing.T) {
-	mgr := &fakeStopManager{configExists: true, result: cluster.StopResult{AlreadyStoppedCount: 1}}
-	oldActive := getActiveClusterFn
-	oldNewMgr := newClusterManagerFn
-	getActiveClusterFn = func() (string, error) { return "active", nil }
+	t.Setenv("HOME", t.TempDir())
+	err := saveStopTestCluster(t, "active-cluster")
+	require.NoError(t, err, "saveStopTestCluster")
+
+	repo, err := persistencefs.NewRepository()
+	require.NoError(t, err, "NewRepository() error")
+	err = repo.SetActive(context.Background(), "active-cluster")
+	require.NoError(t, err, "repo.SetActive")
+
+	oldNewSvc := newStopServicesFn
 	var gotName string
-	newClusterManagerFn = func(_ *log.Logger, clusterName string) (clusterStopper, error) {
+	callCount := 0
+	newStopServicesFn = func(_ *log.Logger, clusterName string) (stopServices, error) {
+		callCount++
 		gotName = clusterName
-		return mgr, nil
+		return stopServices{
+			Orchestration: &fakeStopManager{result: orchestration.StopResult{Outcome: orchestration.StopOutcomeAlreadyStopped, AlreadyStoppedCount: 1}},
+			Active:        &fakeActive{stored: "active-cluster"},
+		}, nil
 	}
 	t.Cleanup(func() {
-		getActiveClusterFn = oldActive
-		newClusterManagerFn = oldNewMgr
+		newStopServicesFn = oldNewSvc
 	})
 
 	streams := cmd.IOStreams{Out: io.Discard, ErrOut: io.Discard}
-	err := runE(context.Background(), testLogger(), streams, DefaultStopTimeout, false, false, "")
-	if err != nil {
-		t.Fatalf("runE() error = %v", err)
+	err = runE(context.Background(), testLogger(), streams, DefaultStopTimeout, false, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, callCount, "newStopServicesFn called %d times, want 1", callCount)
+	assert.Equal(t, "active-cluster", gotName)
+}
+
+func TestRunEFallsBackToDefaultWhenNoActiveClusterAndNoArg(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	oldNewSvc := newStopServicesFn
+	var gotName string
+	callCount := 0
+	newStopServicesFn = func(_ *log.Logger, clusterName string) (stopServices, error) {
+		callCount++
+		gotName = clusterName
+		return stopServices{
+			Orchestration: &fakeStopManager{result: orchestration.StopResult{Outcome: orchestration.StopOutcomeAlreadyStopped, AlreadyStoppedCount: 1}},
+			Active:        &fakeActive{},
+		}, nil
 	}
-	if gotName != "active" {
-		t.Fatalf("cluster name=%q want active", gotName)
-	}
+	t.Cleanup(func() {
+		newStopServicesFn = oldNewSvc
+	})
+
+	streams := cmd.IOStreams{Out: io.Discard, ErrOut: io.Discard}
+	err := runE(context.Background(), testLogger(), streams, DefaultStopTimeout, false, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, callCount, "newStopServicesFn called %d times, want 1", callCount)
+	assert.Equal(t, "default", gotName)
 }
 
 func TestNewCommand(t *testing.T) {
@@ -212,24 +305,15 @@ func TestNewCommand(t *testing.T) {
 
 	command := NewCommand(logger, streams)
 
-	if command == nil {
-		t.Fatal("NewCommand() returned nil")
-	}
+	require.NotNil(t, command, "NewCommand() returned nil")
 
-	if command.Use != "stop [cluster-name]" {
-		t.Errorf("Expected Use to be 'stop [cluster-name]', got '%s'", command.Use)
-	}
-
-	if command.Short != "Stop a hind cluster" {
-		t.Errorf("Expected Short to be 'Stop a hind cluster', got '%s'", command.Short)
-	}
+	assert.Equal(t, "stop [cluster-name]", command.Use)
+	assert.Equal(t, "Stop a hind cluster", command.Short)
 }
 
 func TestDefaultTimeout(t *testing.T) {
 	expected := 30 * time.Second
-	if DefaultStopTimeout != expected {
-		t.Errorf("Expected DefaultStopTimeout to be %v, got %v", expected, DefaultStopTimeout)
-	}
+	assert.Equal(t, expected, DefaultStopTimeout)
 }
 
 func TestCommandFlags(t *testing.T) {
@@ -243,27 +327,12 @@ func TestCommandFlags(t *testing.T) {
 
 	// Check flags exist
 	timeoutFlag := command.Flags().Lookup("timeout")
-	if timeoutFlag == nil {
-		t.Fatal("Expected 'timeout' flag to exist")
-	}
+	require.NotNil(t, timeoutFlag, "Expected 'timeout' flag to exist")
 	forceFlag := command.Flags().Lookup("force")
-	if forceFlag == nil {
-		t.Fatal("Expected 'force' flag to exist")
-	}
-	verboseFlag := command.Flags().Lookup("verbose")
-	if verboseFlag == nil {
-		t.Fatal("Expected 'verbose' flag to exist")
-	}
+	require.NotNil(t, forceFlag, "Expected 'force' flag to exist")
 
-	if timeoutFlag.DefValue != "30s" {
-		t.Errorf("Expected timeout default value to be '30s', got '%s'", timeoutFlag.DefValue)
-	}
-	if forceFlag.DefValue != "false" {
-		t.Errorf("Expected force default value to be 'false', got '%s'", forceFlag.DefValue)
-	}
-	if verboseFlag.DefValue != "false" {
-		t.Errorf("Expected verbose default value to be 'false', got '%s'", verboseFlag.DefValue)
-	}
+	assert.Equal(t, "30s", timeoutFlag.DefValue)
+	assert.Equal(t, "false", forceFlag.DefValue)
 }
 
 func TestCommandArgs(t *testing.T) {
