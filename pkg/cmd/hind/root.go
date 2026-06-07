@@ -10,7 +10,6 @@ import (
 	"github.com/stenh0use/hind/pkg/cmd/hind/build"
 	"github.com/stenh0use/hind/pkg/cmd/hind/get"
 	"github.com/stenh0use/hind/pkg/cmd/hind/list"
-	"github.com/stenh0use/hind/pkg/cmd/hind/releases"
 	"github.com/stenh0use/hind/pkg/cmd/hind/rm"
 	"github.com/stenh0use/hind/pkg/cmd/hind/set"
 	"github.com/stenh0use/hind/pkg/cmd/hind/start"
@@ -41,7 +40,6 @@ func NewCommand(logger *log.Logger, streams cmd.IOStreams) *cobra.Command {
 	rootCmd.AddCommand(build.NewCommand(logger, streams))
 	rootCmd.AddCommand(get.NewCommand(logger, streams))
 	rootCmd.AddCommand(list.NewCommand(logger, streams))
-	rootCmd.AddCommand(releases.NewCommand(logger, streams))
 	rootCmd.AddCommand(rm.NewCommand(logger, streams))
 	rootCmd.AddCommand(set.NewCommand(logger, streams))
 	rootCmd.AddCommand(start.NewCommand(logger, streams))
