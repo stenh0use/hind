@@ -7,80 +7,42 @@ import (
 
 	"github.com/apex/log"
 	"github.com/apex/log/handlers/discard"
-	"github.com/stenh0use/hind/pkg/build/release"
-	"github.com/stenh0use/hind/pkg/config"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/stenh0use/hind/pkg/provider"
+	"github.com/stenh0use/hind/pkg/provider/mock"
 )
-
-// providerStub is a minimal stub implementing provider.Client for use in builder tests.
-// Only BuildImage and TagExists need real behaviour; all others are no-ops.
-type providerStub struct {
-	buildImageFn func(ctx context.Context, opts provider.BuildImageOptions) (provider.BuildImageResult, error)
-	tagExistsFn  func(ctx context.Context, name, tag string) (bool, error)
-}
-
-func (s *providerStub) BuildImage(ctx context.Context, opts provider.BuildImageOptions) (provider.BuildImageResult, error) {
-	if s.buildImageFn != nil {
-		return s.buildImageFn(ctx, opts)
-	}
-	return provider.BuildImageResult{Digest: "sha256:stub", ImageRef: opts.Name + ":" + opts.Tag}, nil
-}
-
-func (s *providerStub) TagExists(ctx context.Context, name, tag string) (bool, error) {
-	if s.tagExistsFn != nil {
-		return s.tagExistsFn(ctx, name, tag)
-	}
-	return true, nil
-}
-
-// Remaining provider.Client methods — no-op stubs.
-func (s *providerStub) CreateContainer(ctx context.Context, cfg provider.ContainerSpec) (string, error) {
-	return "", nil
-}
-func (s *providerStub) StartContainer(ctx context.Context, name string) error  { return nil }
-func (s *providerStub) StopContainer(ctx context.Context, name string) error   { return nil }
-func (s *providerStub) KillContainer(ctx context.Context, name string) error   { return nil }
-func (s *providerStub) DeleteContainer(ctx context.Context, name string) error { return nil }
-func (s *providerStub) InspectContainer(ctx context.Context, name string) (*provider.ContainerInfo, error) {
-	return nil, nil
-}
-func (s *providerStub) ListContainers(ctx context.Context, filters []string) ([]provider.ContainerInfo, error) {
-	return nil, nil
-}
-func (s *providerStub) PullImage(ctx context.Context, name, tag string) error { return nil }
-func (s *providerStub) CreateNetwork(ctx context.Context, cfg config.Network) (string, error) {
-	return "", nil
-}
-func (s *providerStub) DeleteNetwork(ctx context.Context, name string) error { return nil }
-func (s *providerStub) ListNetworks(ctx context.Context, filters []string) ([]provider.NetworkInfo, error) {
-	return nil, nil
-}
-func (s *providerStub) InspectNetwork(ctx context.Context, name string) (*provider.NetworkInfo, error) {
-	return nil, nil
-}
 
 // newTestLogger returns a logger that discards all output.
 func newTestLogger() *log.Logger {
 	return &log.Logger{Handler: discard.New()}
 }
 
-// newStubClient returns a providerStub that satisfies provider.Client.
-func newStubClient() *providerStub {
-	return &providerStub{}
+// newStubClient returns a provider.Client test stub.
+func newStubClient() *mock.ClientStub {
+	return &mock.ClientStub{
+		BuildImageFn: func(_ context.Context, opts provider.BuildImageOptions) (provider.BuildImageResult, error) {
+			return provider.BuildImageResult{Digest: "sha256:stub", ImageRef: opts.Name + ":" + opts.Tag}, nil
+		},
+		TagExistsFn: func(_ context.Context, _, _ string) (bool, error) {
+			return true, nil
+		},
+	}
 }
 
 func TestNewBuilder(t *testing.T) {
 	tests := []struct {
 		name    string
-		kind    release.ImageKind
+		kind    ImageKind
 		wantErr bool
 	}{
-		{name: "valid consul image", kind: release.Consul, wantErr: false},
-		{name: "valid nomad image", kind: release.Nomad, wantErr: false},
-		{name: "valid nomad-client image", kind: release.NomadClient, wantErr: false},
-		{name: "valid vault image", kind: release.Vault, wantErr: false},
-		{name: "invalid image kind", kind: release.ImageKind("invalid"), wantErr: true},
-		{name: "empty image kind", kind: release.ImageKind(""), wantErr: true},
+		{name: "valid consul image", kind: Consul, wantErr: false},
+		{name: "valid nomad image", kind: Nomad, wantErr: false},
+		{name: "valid nomad-client image", kind: NomadClient, wantErr: false},
+		{name: "valid vault image", kind: Vault, wantErr: false},
+		{name: "invalid image kind", kind: ImageKind("invalid"), wantErr: true},
+		{name: "empty image kind", kind: ImageKind(""), wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -89,24 +51,14 @@ func TestNewBuilder(t *testing.T) {
 			got, err := NewBuilder(logger, newStubClient(), tt.kind)
 
 			if tt.wantErr {
-				if err == nil {
-					t.Errorf("NewBuilder(%v) = %v, want error", tt.kind, got)
-				}
+				assert.Error(t, err)
 				return
 			}
 
-			if err != nil {
-				t.Fatalf("NewBuilder(%v) unexpected error: %v", tt.kind, err)
-			}
-			if got == nil {
-				t.Errorf("NewBuilder(%v) = nil, want non-nil Builder", tt.kind)
-			}
-			if got.logger == nil {
-				t.Errorf("NewBuilder(%v).logger = nil, want non-nil logger", tt.kind)
-			}
-			if got.image.Kind != tt.kind {
-				t.Errorf("NewBuilder(%v).image.Kind = %v, want %v", tt.kind, got.image.Kind, tt.kind)
-			}
+			require.NoError(t, err)
+			assert.NotNil(t, got)
+			assert.NotNil(t, got.logger)
+			assert.Equal(t, tt.kind, got.image.Kind)
 		})
 	}
 }
@@ -114,31 +66,31 @@ func TestNewBuilder(t *testing.T) {
 func TestConstructName(t *testing.T) {
 	tests := []struct {
 		name       string
-		imageKind  release.ImageKind
+		imageKind  ImageKind
 		wantPrefix string
 		wantSuffix string
 	}{
 		{
 			name:       "consul image name",
-			imageKind:  release.Consul,
+			imageKind:  Consul,
 			wantPrefix: "docker.io/stenh0use/hind.",
 			wantSuffix: "consul",
 		},
 		{
 			name:       "nomad image name",
-			imageKind:  release.Nomad,
+			imageKind:  Nomad,
 			wantPrefix: "docker.io/stenh0use/hind.",
 			wantSuffix: "nomad",
 		},
 		{
 			name:       "nomad-client image name",
-			imageKind:  release.NomadClient,
+			imageKind:  NomadClient,
 			wantPrefix: "docker.io/stenh0use/hind.",
 			wantSuffix: "nomad-client",
 		},
 		{
 			name:       "vault image name",
-			imageKind:  release.Vault,
+			imageKind:  Vault,
 			wantPrefix: "docker.io/stenh0use/hind.",
 			wantSuffix: "vault",
 		},
@@ -148,17 +100,11 @@ func TestConstructName(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := tt.imageKind.ImageName()
 
-			if !strings.HasPrefix(got, tt.wantPrefix) {
-				t.Errorf("constructName(%v) = %q, want prefix %q", tt.imageKind, got, tt.wantPrefix)
-			}
-			if !strings.HasSuffix(got, tt.wantSuffix) {
-				t.Errorf("constructName(%v) = %q, want suffix %q", tt.imageKind, got, tt.wantSuffix)
-			}
+			assert.True(t, strings.HasPrefix(got, tt.wantPrefix), "constructName(%v) = %q, want prefix %q", tt.imageKind, got, tt.wantPrefix)
+			assert.True(t, strings.HasSuffix(got, tt.wantSuffix), "constructName(%v) = %q, want suffix %q", tt.imageKind, got, tt.wantSuffix)
 
 			expectedFormat := "docker.io/stenh0use/hind." + string(tt.imageKind)
-			if got != expectedFormat {
-				t.Errorf("constructName(%v) = %q, want %q", tt.imageKind, got, expectedFormat)
-			}
+			assert.Equal(t, expectedFormat, got)
 		})
 	}
 }
@@ -166,31 +112,31 @@ func TestConstructName(t *testing.T) {
 func TestBuilder_ImageConfiguration(t *testing.T) {
 	tests := []struct {
 		name              string
-		kind              release.ImageKind
+		kind              ImageKind
 		wantImageName     string
 		wantBaseImagePull bool
 	}{
 		{
 			name:              "consul uses debian base",
-			kind:              release.Consul,
+			kind:              Consul,
 			wantImageName:     "consul",
 			wantBaseImagePull: true,
 		},
 		{
 			name:              "nomad depends on consul",
-			kind:              release.Nomad,
+			kind:              Nomad,
 			wantImageName:     "nomad",
 			wantBaseImagePull: false,
 		},
 		{
 			name:              "nomad-client depends on nomad",
-			kind:              release.NomadClient,
+			kind:              NomadClient,
 			wantImageName:     "nomad-client",
 			wantBaseImagePull: false,
 		},
 		{
 			name:              "vault depends on consul",
-			kind:              release.Vault,
+			kind:              Vault,
 			wantImageName:     "vault",
 			wantBaseImagePull: false,
 		},
@@ -199,97 +145,73 @@ func TestBuilder_ImageConfiguration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			builder, err := NewBuilder(newTestLogger(), newStubClient(), tt.kind)
-			if err != nil {
-				t.Fatalf("NewBuilder(%v) unexpected error: %v", tt.kind, err)
-			}
+			require.NoError(t, err)
 
-			if builder.image.Name != tt.wantImageName {
-				t.Errorf("Builder.image.Name = %q, want %q", builder.image.Name, tt.wantImageName)
-			}
-			if builder.image.BaseImage.Pull != tt.wantBaseImagePull {
-				t.Errorf("Builder.image.BaseImage.Pull = %v, want %v", builder.image.BaseImage.Pull, tt.wantBaseImagePull)
-			}
-			if len(builder.image.Packages) == 0 {
-				t.Errorf("Builder.image.Packages is empty, want non-empty package list")
-			}
+			assert.Equal(t, tt.wantImageName, builder.image.Name)
+			assert.Equal(t, tt.wantBaseImagePull, builder.image.BaseImage.Pull)
+			assert.NotEmpty(t, builder.image.Packages)
 		})
 	}
 }
 
 func TestBuilder_CheckDependencies_CallsProviderTagExists(t *testing.T) {
 	// nomad has BaseImage.Pull=false, so checkDependencies should call TagExists.
-	stub := &providerStub{
-		tagExistsFn: func(_ context.Context, _, _ string) (bool, error) {
+	stub := &mock.ClientStub{
+		TagExistsFn: func(_ context.Context, _, _ string) (bool, error) {
 			return false, nil // simulate missing base image
+		},
+		BuildImageFn: func(_ context.Context, opts provider.BuildImageOptions) (provider.BuildImageResult, error) {
+			return provider.BuildImageResult{Digest: "sha256:stub", ImageRef: opts.Name + ":" + opts.Tag}, nil
 		},
 	}
 
-	builder, err := NewBuilder(newTestLogger(), stub, release.Nomad)
-	if err != nil {
-		t.Fatalf("NewBuilder: %v", err)
-	}
+	builder, err := NewBuilder(newTestLogger(), stub, Nomad)
+	require.NoError(t, err)
 
 	err = builder.checkDependencies(context.Background())
-	if err == nil {
-		t.Fatal("expected error when base image is absent, got nil")
-	}
-	if !strings.Contains(err.Error(), "base image dependency not met") {
-		t.Errorf("error should contain 'base image dependency not met', got: %q", err.Error())
-	}
-	if !strings.Contains(err.Error(), "Resolution: Run 'hind build") {
-		t.Errorf("error should contain resolution hint, got: %q", err.Error())
-	}
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "base image dependency not met")
+	assert.Contains(t, err.Error(), "Resolution: Run 'hind build")
 }
 
 func TestBuilder_BuildImage_CallsProviderBuildImage(t *testing.T) {
 	var capturedOpts provider.BuildImageOptions
 
-	stub := &providerStub{
-		buildImageFn: func(_ context.Context, opts provider.BuildImageOptions) (provider.BuildImageResult, error) {
+	stub := &mock.ClientStub{
+		BuildImageFn: func(_ context.Context, opts provider.BuildImageOptions) (provider.BuildImageResult, error) {
 			capturedOpts = opts
 			return provider.BuildImageResult{Digest: "sha256:abc", ImageRef: "name:tag"}, nil
 		},
 	}
 
 	// Use consul: BaseImage.Pull=true so checkDependencies skips TagExists.
-	builder, err := NewBuilder(newTestLogger(), stub, release.Consul)
-	if err != nil {
-		t.Fatalf("NewBuilder: %v", err)
-	}
+	builder, err := NewBuilder(newTestLogger(), stub, Consul)
+	require.NoError(t, err)
 
-	if err := builder.BuildImage(context.Background()); err != nil {
-		t.Fatalf("BuildImage returned unexpected error: %v", err)
-	}
+	err = builder.BuildImage(context.Background())
+	require.NoError(t, err)
 
-	expectedName := release.Consul.ImageName()
-	if capturedOpts.Name != expectedName {
-		t.Errorf("BuildImageOptions.Name = %q, want %q", capturedOpts.Name, expectedName)
-	}
-	if capturedOpts.Tag == "" {
-		t.Errorf("BuildImageOptions.Tag is empty, want non-empty release tag")
-	}
-	if capturedOpts.ContextDir == "" {
-		t.Errorf("BuildImageOptions.ContextDir is empty, want a non-empty path")
-	}
-	if len(capturedOpts.BuildArgs) == 0 {
-		t.Errorf("BuildImageOptions.BuildArgs is empty, want at least one entry")
-	}
+	expectedName := Consul.ImageName()
+	assert.Equal(t, expectedName, capturedOpts.Name)
+	assert.NotEmpty(t, capturedOpts.Tag)
+	assert.NotEmpty(t, capturedOpts.ContextDir)
+	assert.NotEmpty(t, capturedOpts.BuildArgs)
 }
 
 func TestBuilder_CheckDependencies_SkipsWhenPull(t *testing.T) {
 	// consul has BaseImage.Pull=true — TagExists must never be called.
-	stub := &providerStub{
-		tagExistsFn: func(_ context.Context, _, _ string) (bool, error) {
+	stub := &mock.ClientStub{
+		BuildImageFn: func(_ context.Context, opts provider.BuildImageOptions) (provider.BuildImageResult, error) {
+			return provider.BuildImageResult{Digest: "sha256:stub", ImageRef: opts.Name + ":" + opts.Tag}, nil
+		},
+		TagExistsFn: func(_ context.Context, _, _ string) (bool, error) {
 			panic("TagExists must not be called when BaseImage.Pull is true")
 		},
 	}
 
-	builder, err := NewBuilder(newTestLogger(), stub, release.Consul)
-	if err != nil {
-		t.Fatalf("NewBuilder: %v", err)
-	}
+	builder, err := NewBuilder(newTestLogger(), stub, Consul)
+	require.NoError(t, err)
 
-	if err := builder.checkDependencies(context.Background()); err != nil {
-		t.Errorf("checkDependencies should return nil for pull=true image, got: %v", err)
-	}
+	err = builder.checkDependencies(context.Background())
+	assert.NoError(t, err)
 }

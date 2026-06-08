@@ -20,7 +20,24 @@ go test ./pkg/cluster -run TestClusterManager_Create
 
 # Verbose output
 go test -v ./...
+
+# Run full end-to-end CLI lifecycle suite (requires Docker + built binary)
+make test-e2e
+
+# Run a single end-to-end test by selector
+make test-e2e-one TEST=TestE2E_Lifecycle_BuildStartListStopRm
 ```
+
+## End-to-End CLI Tests (No Mocks)
+
+The e2e suite lives under `pkg/cmd/hind/e2e` and executes real CLI commands against Docker runtime boundaries (no mocks/fakes).
+
+Prerequisites:
+- Docker daemon reachable (`docker info` succeeds)
+- `bin/hind` available (targets build it automatically)
+
+Behavior when prerequisites are missing:
+- Tests use `t.Skip` with explicit skip reasons (for example missing binary or unreachable Docker).
 
 ## Test Organization
 

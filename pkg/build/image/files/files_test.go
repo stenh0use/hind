@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestImageWriteFiles_WritesEmbeddedBuildContext(t *testing.T) {
@@ -34,19 +36,15 @@ func TestImageWriteFiles_WritesEmbeddedBuildContext(t *testing.T) {
 			t.Setenv("HOME", homeDir)
 
 			imageFiles, err := New(tt.imageName)
-			if err != nil {
-				t.Fatalf("New(%q) error = %v", tt.imageName, err)
-			}
+			require.NoError(t, err)
 
-			if err := imageFiles.WriteFiles(); err != nil {
-				t.Fatalf("WriteFiles() error = %v", err)
-			}
+			err = imageFiles.WriteFiles()
+			require.NoError(t, err)
 
 			for _, rel := range tt.expectFiles {
 				fullPath := filepath.Join(imageFiles.BuildDir(), rel)
-				if _, err := os.Stat(fullPath); err != nil {
-					t.Fatalf("expected file %q to exist: %v", fullPath, err)
-				}
+				_, err := os.Stat(fullPath)
+				require.NoError(t, err, "expected file %q to exist", fullPath)
 			}
 		})
 	}

@@ -8,14 +8,16 @@ import (
 	"strings"
 
 	"github.com/stenh0use/hind/pkg/build/release"
+	"github.com/stenh0use/hind/pkg/version"
 )
 
 type Image struct {
-	Name      string
-	Kind      release.ImageKind
-	Packages  []string
-	BaseImage ImageMeta
-	Release   string
+	Name            string
+	Kind            ImageKind
+	Packages        []string
+	BaseImage       ImageMeta
+	Release         string
+	ReleasePackages release.Packages
 }
 
 type ImageMeta struct {
@@ -26,96 +28,104 @@ type ImageMeta struct {
 }
 
 func BuildTargets() []string {
-	targets := make([]string, 0, len(release.Images())+1)
-	for _, t := range release.Images() {
+	targets := make([]string, 0, len(Images())+1)
+	for _, t := range Images() {
 		targets = append(targets, t.String())
 	}
 	return append(targets, "all")
 }
 
-func NewImage(i release.ImageKind) (Image, error) {
-	rel := release.Latest()
+func NewImage(i ImageKind) (Image, error) {
+	return NewImageWithRelease(i, release.Versions())
+}
+
+// NewImageWithRelease constructs an image definition for the given image kind
+// using the provided release metadata.
+func NewImageWithRelease(i ImageKind, rel release.Packages) (Image, error) {
 	switch i {
-	case release.Consul:
+	case Consul:
 		return newConsul(rel), nil
-	case release.Nomad:
+	case Nomad:
 		return newNomad(rel), nil
-	case release.NomadClient:
+	case NomadClient:
 		return newNomadClient(rel), nil
-	case release.Vault:
+	case Vault:
 		return newVault(rel), nil
 	default:
 		return Image{}, fmt.Errorf("image '%s' is not a valid hind image", i)
 	}
 }
 
-func newConsul(rel release.Info) Image {
+func newConsul(rel release.Packages) Image {
 	return Image{
-		Name:     "consul",
-		Kind:     release.Consul,
-		Packages: []string{"consul"},
+		Name:            "consul",
+		Kind:            Consul,
+		Packages:        []string{"consul"},
+		ReleasePackages: rel,
 		BaseImage: ImageMeta{
-			Name: string(release.Base),
+			Name: string(Base),
 			Tag:  rel.Base,
 			Pull: true,
 		},
-		Release: rel.Hind,
+		Release: version.HindVersion,
 	}
 }
 
-func newNomad(rel release.Info) Image {
+func newNomad(rel release.Packages) Image {
 	return Image{
-		Name:     "nomad",
-		Kind:     release.Nomad,
-		Packages: []string{"consul", "nomad"},
+		Name:            "nomad",
+		Kind:            Nomad,
+		Packages:        []string{"consul", "nomad"},
+		ReleasePackages: rel,
 		BaseImage: ImageMeta{
-			Name: release.Consul.ImageName(),
-			Tag:  rel.Hind,
+			Name: Consul.ImageName(),
+			Tag:  version.HindVersion,
 			Pull: false,
 		},
-		Release: rel.Hind,
+		Release: version.HindVersion,
+	}
+}
+func newNomadClient(rel release.Packages) Image {
+	return Image{
+		Name:            "nomad-client",
+		Kind:            NomadClient,
+		Packages:        []string{"consul", "nomad", "dockerce", "containerd"},
+		ReleasePackages: rel,
+		BaseImage: ImageMeta{
+			Name: Nomad.ImageName(),
+			Tag:  version.HindVersion,
+			Pull: false,
+		},
+		Release: version.HindVersion,
 	}
 }
 
-func newNomadClient(rel release.Info) Image {
+func newVault(rel release.Packages) Image {
 	return Image{
-		Name:     "nomad-client",
-		Kind:     release.NomadClient,
-		Packages: []string{"consul", "nomad", "dockerce", "containerd"},
+		Name:            "vault",
+		Kind:            Vault,
+		Packages:        []string{"consul", "vault"},
+		ReleasePackages: rel,
 		BaseImage: ImageMeta{
-			Name: release.Nomad.ImageName(),
-			Tag:  rel.Hind,
+			Name: Consul.ImageName(),
+			Tag:  version.HindVersion,
 			Pull: false,
 		},
-		Release: rel.Hind,
-	}
-}
-
-func newVault(rel release.Info) Image {
-	return Image{
-		Name:     "vault",
-		Kind:     release.Vault,
-		Packages: []string{"consul", "vault"},
-		BaseImage: ImageMeta{
-			Name: release.Consul.ImageName(),
-			Tag:  rel.Hind,
-			Pull: false,
-		},
-		Release: rel.Hind,
+		Release: version.HindVersion,
 	}
 }
 
 // packagesToBuildArgs converts the image's package list to a map of build arg
 // key-value pairs (e.g. CONSUL_VERSION -> "1.17.0").
 func (i *Image) packagesToBuildArgs() (map[string]string, error) {
-	rel, err := release.Get(i.Release)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get release %s: %w", i.Release, err)
-	}
+	return i.packagesToBuildArgsWithRelease(i.ReleasePackages)
+}
+
+func (i *Image) packagesToBuildArgsWithRelease(rel release.Packages) (map[string]string, error) {
 
 	args := make(map[string]string, len(i.Packages))
 	for _, name := range i.Packages {
-		if version, err := rel.GetPackage(name); err == nil {
+		if version, err := rel.Package(name); err == nil {
 			args[strings.ToUpper(name)+"_VERSION"] = version
 		}
 	}

@@ -13,3 +13,13 @@ const (
 func (s Status) String() string {
 	return string(s)
 }
+
+// IsRunning reports whether this status represents a running container.
+func (s Status) IsRunning() bool {
+	return s == Running
+}
+
+// IsError reports whether this status represents an unhealthy/error container.
+func (s Status) IsError() bool {
+	return s == Error
+}

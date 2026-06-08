@@ -10,22 +10,60 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/stenh0use/hind/pkg/cluster"
+	"github.com/stenh0use/hind/pkg/cluster/orchestration"
+	"github.com/stenh0use/hind/pkg/cluster/persistence"
 	"github.com/stenh0use/hind/pkg/cmd"
-	"github.com/stenh0use/hind/pkg/config"
-	"github.com/stenh0use/hind/pkg/provider"
-	"github.com/stenh0use/hind/pkg/provider/dockercli"
+	cluster1 "github.com/stenh0use/hind/pkg/cmd/hind/internal/cluster"
 )
 
 // DefaultListTimeout is the default timeout for listing clusters
 const DefaultListTimeout = 30 * time.Second
 
 // clusterStatus holds aggregated cluster status information
-type clusterStatus struct {
-	Status       string    // running, partial, stopped, degraded, not-found
-	RunningNodes int       // Number of running containers
-	TotalNodes   int       // Total expected containers
-	Created      time.Time // Creation time of oldest container
+type clusterStatus = cluster.ClusterStatusSnapshotResult
+
+var newClusterStatusSnapshotService = func() cluster.ClusterStatusSnapshotService {
+	return cluster.NewClusterStatusSnapshotService()
 }
+
+func getClusterStatusFromInspect(ctx context.Context, inspect orchestration.InspectResult) (*clusterStatus, error) {
+	result, err := newClusterStatusSnapshotService().Build(ctx, cluster.ClusterStatusSnapshotRequest{Inspect: inspect})
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+type clusterListService interface {
+	List(ctx context.Context) (orchestration.ListResult, error)
+}
+
+type clusterStatusService interface {
+	Inspect(ctx context.Context) (orchestration.InspectResult, error)
+}
+
+type listServices struct {
+	Orchestration clusterListService
+	Active        persistence.ActiveRepository
+}
+
+var newClusterListServices = func(logger *log.Logger) (listServices, error) {
+	svc, err := cluster1.NewClusterServices(logger, "default")
+	if err != nil {
+		return listServices{}, err
+	}
+	return listServices{Orchestration: svc.Orchestration, Active: svc.Active}, nil
+}
+
+var newClusterStatusService = func(logger *log.Logger, clusterName string) (clusterStatusService, error) {
+	svc, err := cluster1.NewClusterServices(logger, clusterName)
+	if err != nil {
+		return nil, err
+	}
+	return svc.Orchestration, nil
+}
+
+var getClusterStatusFn = getClusterStatus
 
 // NewCommand creates the cluster list command
 func NewCommand(logger *log.Logger, streams cmd.IOStreams) *cobra.Command {
@@ -47,13 +85,19 @@ func NewCommand(logger *log.Logger, streams cmd.IOStreams) *cobra.Command {
 }
 
 func runE(ctx context.Context, logger *log.Logger, streams cmd.IOStreams, timeout time.Duration) error {
+	listSvc, err := newClusterListServices(logger)
+	if err != nil {
+		return fmt.Errorf("failed to create cluster list service: %w", err)
+	}
+
 	logger.WithField("timeout", timeout).Debug("Listing clusters with timeout")
 
 	// Get list of cluster names
-	clusters, err := cluster.List()
+	listResult, err := listSvc.Orchestration.List(ctx)
 	if err != nil {
 		return fmt.Errorf("failed getting cluster list: %w", err)
 	}
+	clusters := listResult.Names
 
 	if len(clusters) == 0 {
 		fmt.Fprintln(streams.ErrOut, "No clusters found")
@@ -61,7 +105,7 @@ func runE(ctx context.Context, logger *log.Logger, streams cmd.IOStreams, timeou
 	}
 
 	// Get active cluster
-	activeCluster, err := cluster.GetActiveCluster()
+	activeCluster, err := listSvc.Active.GetActive(ctx)
 	if err != nil {
 		logger.Warnf("Failed to get active cluster: %v", err)
 	}
@@ -69,7 +113,7 @@ func runE(ctx context.Context, logger *log.Logger, streams cmd.IOStreams, timeou
 	// Retrieve status for each cluster
 	clusterStatuses := make(map[string]*clusterStatus)
 	for _, clusterName := range clusters {
-		status, err := getClusterStatus(ctx, logger, clusterName, timeout)
+		status, err := getClusterStatusFn(ctx, logger, clusterName, timeout)
 		if err != nil {
 			logger.Warnf("Failed to get status for cluster %s: %v", clusterName, err)
 			// Use error status as fallback
@@ -107,7 +151,9 @@ func runE(ctx context.Context, logger *log.Logger, streams cmd.IOStreams, timeou
 		)
 	}
 
-	w.Flush()
+	if err := w.Flush(); err != nil {
+		return fmt.Errorf("failed to flush list output: %w", err)
+	}
 	return nil
 }
 
@@ -116,92 +162,20 @@ func getClusterStatus(ctx context.Context, logger *log.Logger, clusterName strin
 	statusCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	// Create cluster manager
-	manager, err := cluster.New(logger, clusterName, dockercli.New(logger))
+	svc, err := newClusterStatusService(logger, clusterName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create cluster manager: %w", err)
+		return nil, fmt.Errorf("failed to create cluster status service: %w", err)
 	}
-
-	// Get cluster info from manager
-	info, err := manager.Get(statusCtx)
+	inspect, err := svc.Inspect(statusCtx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get cluster info: %w", err)
+		return nil, fmt.Errorf("failed to inspect cluster: %w", err)
 	}
 
-	// Aggregate status
-	return aggregateClusterStatus(info, manager.Config()), nil
-}
-
-// aggregateClusterStatus computes cluster-level status from container statuses
-func aggregateClusterStatus(info *cluster.ClusterInfo, cfg *config.Cluster) *clusterStatus {
-	status := &clusterStatus{
-		TotalNodes: len(cfg.Nodes),
+	status, buildErr := getClusterStatusFromInspect(statusCtx, inspect)
+	if buildErr != nil {
+		return nil, fmt.Errorf("failed to build status snapshot: %w", buildErr)
 	}
-
-	if len(info.Containers) == 0 {
-		status.Status = "not-found"
-		return status
-	}
-
-	var (
-		runningCount = 0
-		stoppedCount = 0
-		errorCount   = 0
-		oldestTime   = time.Now()
-	)
-
-	for _, container := range info.Containers {
-		// Count status types
-		switch container.Status {
-		case provider.Running.String():
-			runningCount++
-		case provider.Stopped.String():
-			stoppedCount++
-		case provider.Error.String():
-			errorCount++
-		}
-
-		// Track oldest creation time
-		if created, err := parseCreatedTime(container.Created); err == nil {
-			if created.Before(oldestTime) {
-				oldestTime = created
-			}
-		}
-	}
-
-	status.RunningNodes = runningCount
-	status.Created = oldestTime
-
-	// Determine overall status
-	if errorCount > 0 {
-		status.Status = "degraded"
-	} else if runningCount == len(info.Containers) && runningCount == status.TotalNodes {
-		status.Status = "running"
-	} else if stoppedCount == len(info.Containers) {
-		status.Status = "stopped"
-	} else {
-		status.Status = "partial"
-	}
-
-	return status
-}
-
-// parseCreatedTime parses Docker's created time format
-func parseCreatedTime(created string) (time.Time, error) {
-	// Docker returns times in various formats, handle common ones
-	layouts := []string{
-		time.RFC3339,
-		time.RFC3339Nano,
-		"2006-01-02 15:04:05 -0700 MST",
-	}
-
-	for _, layout := range layouts {
-		if t, err := time.Parse(layout, created); err == nil {
-			return t, nil
-		}
-	}
-
-	return time.Time{}, fmt.Errorf("unable to parse time: %s", created)
+	return status, nil
 }
 
 // formatCreatedTime formats a timestamp as relative time

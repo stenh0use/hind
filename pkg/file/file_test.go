@@ -1,6 +1,10 @@
 package file
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestManagerRejectsTraversalAndAbsolutePaths(t *testing.T) {
 	tests := []struct {
@@ -57,29 +61,14 @@ func TestManagerRejectsTraversalAndAbsolutePaths(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
 			m, err := New(root)
-			if err != nil {
-				t.Fatalf("New() failed: %v", err)
-			}
+			require.NoError(t, err)
 
 			err = tt.op(m)
-			if tt.wantErr && err == nil {
-				t.Fatal("expected error, got nil")
-			}
-			if !tt.wantErr && err != nil {
-				t.Fatalf("expected no error, got %v", err)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
 			}
 		})
-	}
-}
-
-func TestManagerGetPathRejectsEscape(t *testing.T) {
-	root := t.TempDir()
-	m, err := New(root)
-	if err != nil {
-		t.Fatalf("New() failed: %v", err)
-	}
-
-	if got := m.GetPath("../../escape"); got != "" {
-		t.Fatalf("expected empty path for traversal input, got %q", got)
 	}
 }

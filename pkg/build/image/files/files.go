@@ -39,7 +39,7 @@ func New(name string) (Image, error) {
 		return i, fmt.Errorf("failed to get home directory for image %s build files: %w", name, err)
 	}
 
-	i.buildDir = file.JoinPath(homeDir, buildBaseDir, buildSubDir, i.name)
+	i.buildDir = filepath.Clean(filepath.Join(homeDir, buildBaseDir, buildSubDir, i.name))
 	fileManager, err := file.New(i.buildDir)
 	if err != nil {
 		return i, fmt.Errorf("failed to create new build files cache: %w", err)

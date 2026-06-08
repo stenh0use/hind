@@ -20,8 +20,14 @@ type Builder struct {
 
 // NewBuilder constructs a Builder for the given image kind, using the provided
 // provider.Client for all runtime Docker interactions.
-func NewBuilder(logger *log.Logger, client provider.Client, kind release.ImageKind) (*Builder, error) {
-	image, err := NewImage(kind)
+func NewBuilder(logger *log.Logger, client provider.Client, kind ImageKind) (*Builder, error) {
+	return NewBuilderWithRelease(logger, client, kind, release.Versions())
+}
+
+// NewBuilderWithRelease constructs a Builder for the given image kind and
+// explicit release metadata.
+func NewBuilderWithRelease(logger *log.Logger, client provider.Client, kind ImageKind, rel release.Packages) (*Builder, error) {
+	image, err := NewImageWithRelease(kind, rel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create image definition: %w", err)
 	}
@@ -77,14 +83,14 @@ func (b *Builder) checkDependencies(ctx context.Context) error {
 		return nil
 	}
 
-	sanitizedName, _ := strings.CutPrefix(b.image.BaseImage.Name, release.ImageRegistry+"/")
+	sanitizedName, _ := strings.CutPrefix(b.image.BaseImage.Name, ImageRegistry+"/")
 
 	exists, err := b.client.TagExists(ctx, sanitizedName, b.image.BaseImage.Tag)
 	if err != nil {
 		return fmt.Errorf("failed to check tag exists: %w", err)
 	}
 
-	component, _ := strings.CutPrefix(sanitizedName, release.ImageRepo+"/"+release.ImageNamePrefix)
+	component, _ := strings.CutPrefix(sanitizedName, ImageRepo+"/"+ImageNamePrefix)
 
 	if !exists {
 		return fmt.Errorf("base image dependency not met: %s\n"+

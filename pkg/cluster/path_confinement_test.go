@@ -1,11 +1,17 @@
 package cluster
 
 import (
-	"strings"
+	"context"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/stenh0use/hind/pkg/cluster/domain"
+	persistencefs "github.com/stenh0use/hind/pkg/cluster/persistence/fs"
 )
 
-func TestValidateClusterName(t *testing.T) {
+func TestValidateName(t *testing.T) {
 	tests := []struct {
 		name        string
 		clusterName string
@@ -55,12 +61,11 @@ func TestValidateClusterName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateClusterName(tt.clusterName)
-			if tt.wantErr && err == nil {
-				t.Fatalf("ValidateClusterName(%q) expected error, got nil", tt.clusterName)
-			}
-			if !tt.wantErr && err != nil {
-				t.Fatalf("ValidateClusterName(%q) expected no error, got %v", tt.clusterName, err)
+			err := domain.ValidateName(tt.clusterName)
+			if tt.wantErr {
+				assert.Error(t, err, "domain.ValidateName(%q) expected error", tt.clusterName)
+			} else {
+				assert.NoError(t, err, "domain.ValidateName(%q) expected no error", tt.clusterName)
 			}
 		})
 	}
@@ -70,12 +75,10 @@ func TestSetActiveCluster_RejectsTraversalName(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
 
-	err := SetActiveCluster("../../etc")
-	if err == nil {
-		t.Fatal("expected error for traversal cluster name, got nil")
-	}
+	repo, err := persistencefs.NewRepository()
+	require.NoError(t, err)
 
-	if !strings.Contains(err.Error(), "invalid cluster name") {
-		t.Fatalf("expected invalid cluster name error, got %v", err)
-	}
+	err = repo.SetActive(context.Background(), "../../etc")
+	require.Error(t, err, "expected error for traversal cluster name")
+	assert.Contains(t, err.Error(), "invalid cluster name")
 }
