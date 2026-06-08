@@ -9,7 +9,7 @@ Thank you for your interest in contributing to hind! This guide will help you ge
 - Go 1.21 or later
 - Docker or compatible container runtime
 - Make
-- golangci-lint (v1.64.7 or later)
+- golangci-lint (v2.12.2 or later)
 
 ### Initial Setup
 
@@ -80,7 +80,7 @@ To install golangci-lint locally:
 
 ```bash
 brew install golangci-lint
-# or: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.7
+# or: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2.12.2
 ```
 
 CI enforces golangci-lint on pull requests, so local runs should match CI expectations.
