@@ -182,6 +182,9 @@ func syncPath(path string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	return f.Sync()
+	if err := f.Sync(); err != nil {
+		f.Close() //nolint:errcheck
+		return err
+	}
+	return f.Close()
 }

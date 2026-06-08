@@ -90,7 +90,7 @@ func configureLogging(logger *log.Logger, flags *flagpole, clusterName string) {
 func createStartServices(ctx context.Context, logger *log.Logger, clusterName string) (startServices, error) {
 	logger.Debug("Checking Docker daemon accessibility")
 	if err := checkDockerDaemonFn(ctx, logger); err != nil {
-		return startServices{}, fmt.Errorf("Docker daemon is not accessible: %w", err)
+		return startServices{}, fmt.Errorf("docker daemon is not accessible: %w", err)
 	}
 
 	svc, err := newStartServicesFn(logger, clusterName)

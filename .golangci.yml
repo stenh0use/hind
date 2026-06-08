@@ -1,0 +1,15 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - staticcheck
+    - unused
+
+  settings:
+    errcheck:
+      # fmt writes to io.Writer (stdout/stderr) never need error checking in CLI output.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintln
+        - fmt.Fprintf

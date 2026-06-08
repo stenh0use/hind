@@ -97,7 +97,7 @@ func TestStatusSnapshot_Build(t *testing.T) {
 func TestStatusSnapshot_Build_NilContext(t *testing.T) {
 	t.Parallel()
 	svc := NewClusterStatusSnapshotService()
-	_, err := svc.Build(nil, ClusterStatusSnapshotRequest{})
+	_, err := svc.Build(nil, ClusterStatusSnapshotRequest{}) //nolint:staticcheck // intentionally testing nil context rejection
 	require.Error(t, err, "expected error for nil context")
 }
 
