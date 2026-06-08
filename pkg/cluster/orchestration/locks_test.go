@@ -67,17 +67,6 @@ func (c *countingLifecycle) setWaitGate(op string, gate chan struct{}) {
 	c.waitGateByOp[op] = gate
 }
 
-func (c *countingLifecycle) snapshot() (startCalled int, stopCalled int, deleteCalled int, scaleCalled int, maxMutations int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	startCalled = c.activeByOp["start"] + (c.maxByOp["start"] - c.activeByOp["start"])
-	stopCalled = c.activeByOp["stop"] + (c.maxByOp["stop"] - c.activeByOp["stop"])
-	deleteCalled = c.deleteCalled
-	scaleCalled = c.activeByOp["scale"] + (c.maxByOp["scale"] - c.activeByOp["scale"])
-	maxMutations = c.maxMutations
-	return
-}
-
 func waitForMutationEntry(t *testing.T, life *countingLifecycle, op string) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -303,7 +292,7 @@ func invokeMutation(svc Service, op string) error {
 func TestServiceRejectsNilContext(t *testing.T) {
 	t.Parallel()
 	svc := NewService(Options{Lifecycle: &countingLifecycle{}, Scale: passthroughScaler{}, Inspect: passthroughInspector{}, List: passthroughLister{}, Locker: NewInMemoryLocker()})
-	_, err := svc.Start(nil, StartRequest{})
+	_, err := svc.Start(nil, StartRequest{}) //nolint:staticcheck // intentionally testing nil context rejection
 	require.Error(t, err)
 	assert.Equal(t, "context cannot be nil", err.Error())
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"os"
 	"testing"
 	"time"
 
@@ -168,9 +167,7 @@ func TestRunE_NotFoundMapping(t *testing.T) {
 
 func TestRunEUsesActiveClusterWhenNoArg(t *testing.T) {
 	tmpDir := t.TempDir()
-	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	t.Setenv("HOME", tmpDir)
 
 	err := saveTestCluster(t, "active-cluster")
 	require.NoError(t, err, "saveTestCluster")
@@ -203,9 +200,7 @@ func TestRunEUsesActiveClusterWhenNoArg(t *testing.T) {
 
 func TestRunEFallsBackToDefaultWhenNoActiveClusterAndNoArg(t *testing.T) {
 	tmpDir := t.TempDir()
-	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	t.Setenv("HOME", tmpDir)
 
 	orig := newClusterManagerFn
 	var gotName string
@@ -230,9 +225,7 @@ func TestRunEFallsBackToDefaultWhenNoActiveClusterAndNoArg(t *testing.T) {
 func TestRunE_ClearsActiveClusterOnDelete(t *testing.T) {
 	// Redirect HOME so cluster state is isolated to this test.
 	tmpDir := t.TempDir()
-	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	t.Setenv("HOME", tmpDir)
 
 	const clusterName = "my-cluster"
 
@@ -263,9 +256,7 @@ func TestRunE_ClearsActiveClusterOnDelete(t *testing.T) {
 
 func TestRm_DeleteFailureBeforeRemoval_PreservesActiveProfile(t *testing.T) {
 	tmpDir := t.TempDir()
-	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	t.Setenv("HOME", tmpDir)
 
 	for _, name := range []string{"active-a", "other-b"} {
 		err := saveTestCluster(t, name)
@@ -291,9 +282,7 @@ func TestRm_DeleteFailureBeforeRemoval_PreservesActiveProfile(t *testing.T) {
 
 func TestRunE_PreservesActiveWhenRemovingNonActive(t *testing.T) {
 	tmpDir := t.TempDir()
-	oldHome := os.Getenv("HOME")
-	os.Setenv("HOME", tmpDir)
-	defer os.Setenv("HOME", oldHome)
+	t.Setenv("HOME", tmpDir)
 
 	for _, name := range []string{"active-a", "other-b"} {
 		err := saveTestCluster(t, name)
